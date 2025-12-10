@@ -32,8 +32,7 @@ import AequilibraEFileSystem from '@/plugins/aequilibrae/AequilibraEFileSystem'
 
 import { FileSystemConfig, UI_FONT, BG_COLOR_DASHBOARD } from '@/Globals'
 
-import initSqlJs from 'sql.js'
-import type { Database } from 'sql.js'
+import SPL from 'spl.js'
 import YAML from 'yaml'
 
 const MyComponent = defineComponent({
@@ -55,8 +54,8 @@ const MyComponent = defineComponent({
       loadingText: '',
       id: `id-${Math.floor(1e12 * Math.random())}` as any,
       aeqFileSystem: null as any,
-      SQL: null as any,
-      db: null as Database | null,
+      spl: null as any,
+      db: null as any,
       tables: [] as Array<{name: string, type: string, rowCount: number, columns: any[]}>,
       searchTerm: '',
       isLoaded: false,
@@ -90,32 +89,39 @@ const MyComponent = defineComponent({
       // only continue if we are on a real page and not the file browser
       if (this.thumbnail) return
 
-      // Initialize sql.js
-      if (!this.SQL) {
-        this.SQL = await initSqlJs({
-          locateFile: (file: string) => `https://sql.js.org/dist/${file}`,
-        })
+      // Initialize spl.js with spatialite support
+      if (!this.spl) {
+        this.loadingText = 'Loading SQL engine with spatialite...'
+        this.spl = await SPL()
+        console.log('SPL engine initialized with spatialite')
       }
 
       // Load the database
       this.loadingText = 'Loading database...'
+      console.log(this.loadingText)
       const dbPath = this.vizDetails.database
-      this.db = await this.loadDatabase(dbPath)
-
+      await this.loadDatabase(dbPath)
+      
       // Get table information
       this.loadingText = 'Reading tables...'
-      const tableNames = this.getTableNames(this.db)
+      console.log(this.loadingText)
+      const tableNames = await this.getTableNames(this.db)
       
       for (const tableName of tableNames) {
-        const schema = this.getTableSchema(this.db, tableName)
-        const rowCount = this.getRowCount(this.db, tableName)
-        
-        this.tables.push({
-          name: tableName,
-          type: 'table',
-          rowCount,
-          columns: schema,
-        })
+        const allowedTables = ['nodes', 'links', 'zones']
+        if (allowedTables.includes(tableName.toLowerCase())) {
+          console.log(tableName)
+  
+          const schema = await this.getTableSchema(this.db, tableName)
+          const rowCount = await this.getRowCount(this.db, tableName)
+          
+          this.tables.push({
+            name: tableName,
+            type: 'table',
+            rowCount,
+            columns: schema,
+          }) 
+        }
       }
 
       this.isLoaded = true
@@ -175,66 +181,42 @@ const MyComponent = defineComponent({
       }
     },
 
-    async loadDatabase(filepath: string): Promise<Database> {
+    async loadDatabase(filepath: string): Promise<void> {
       console.log('Loading database from:', filepath)
       
-      // Fetch database file as blob
       const blob = await this.aeqFileSystem.getFileBlob(filepath)
-      console.log('Blob size:', blob.size, 'type:', blob.type)
-      
       const arrayBuffer = await blob.arrayBuffer()
-      console.log('ArrayBuffer size:', arrayBuffer.byteLength)
-      
-      const uint8Array = new Uint8Array(arrayBuffer)
-      
-      // Check SQLite magic header (should be "SQLite format 3\0")
-      const header = new TextDecoder().decode(uint8Array.slice(0, 16))
-      console.log('File header:', header)
-      
-      if (!header.startsWith('SQLite format 3')) {
-        throw new Error(`Not a valid SQLite file. Header: ${header}`)
-      }
-      
-      // Create database instance
-      const db = new this.SQL!.Database(uint8Array)
-      return db
+
+      const spl = await SPL();
+      const db = spl.db(arrayBuffer)
+
+      this.db = db
     },
 
-    getTableNames(db: Database): string[] {
+    async getTableNames(db: any): Promise<string[]> {
+      if (!db) throw new Error('Database not loaded')
+      const result = await db.exec(`SELECT name FROM sqlite_master;`).get.objs
+
+      return result.map((row: any) => row.name)
+    },    
+    
+    async getTableSchema(db: any, tableName: string): Promise<{ name: string; type: string; nullable: boolean }[]> {
       if (!db) throw new Error('Database not loaded')
 
-      const res = db.exec(`
-        SELECT name FROM sqlite_master 
-        WHERE type='table' 
-        AND name NOT LIKE 'sqlite_%'
-        AND name NOT LIKE 'geometry_columns%'
-        AND name NOT LIKE 'spatial_ref_sys%'
-        AND name NOT LIKE 'idx_%'
-        ORDER BY name
-      `)
+      const result = await db.exec(`PRAGMA table_info("${tableName}");`).get.objs
 
-      return res.length > 0 ? res[0].values.flat() as string[] : []
+      return result.map((row: any) => ({
+        name: row.name,
+        type: row.type,
+        nullable: row.notnull === 0,
+      }))
     },
 
-    getTableSchema(db: Database, tableName: string): { name: string; type: string; nullable: boolean }[] {
+    async getRowCount(db: any, tableName: string): Promise<number> {
       if (!db) throw new Error('Database not loaded')
 
-      const res = db.exec(`PRAGMA table_info("${tableName}");`)
-
-      return res.length > 0
-        ? res[0].values.map((row: any[]) => ({
-            name: row[1],
-            type: row[2],
-            nullable: row[3] === 0,
-          }))
-        : []
-    },
-
-    getRowCount(db: Database, tableName: string): number {
-      if (!db) throw new Error('Database not loaded')
-
-      const res = db.exec(`SELECT COUNT(*) FROM "${tableName}";`)
-      return res.length > 0 ? res[0].values[0][0] as number : 0
+      const result = await db.exec(`SELECT COUNT(*) as count FROM "${tableName}";`).get.objs
+      return result.length > 0 ? result[0].count : 0
     },
 
 
