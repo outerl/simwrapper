@@ -12,12 +12,7 @@
     "Johanna Bänsch <j.baensch@tu-berlin.de>"
   ],
   "scripts": {
-    "deploy-sandag": "bash scripts/deploy-ghpages.sh simwrapper/sandag /",
-    "deploy-vsp": "bash scripts/deploy-ghpages.sh matsim-vsp/simwrapper simwrapper",
-    "deploy-staging": "bash scripts/deploy-ghpages.sh simwrapper/staging staging",
-    "deploy-simwrapper-app": "bash scripts/deploy-simwrapper-app.sh simwrapper/app",
-    "deploy-asim": "bash scripts/deploy-ghpages.sh ActivitySim/dashboard dashboard",
-    "deploy-bleeding": "bash scripts/deploy-ghpages.sh simwrapper/bleeding bleeding",
+    "deploy": "bash scripts/deploy-ghpages.sh tomstephen/simwrapper /",
     "index": "node scripts/build-index.cjs public/data",
     "dev": "npm run index && vite",
     "serve": "npm run index && vite",

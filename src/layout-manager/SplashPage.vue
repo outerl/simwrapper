@@ -312,7 +312,7 @@ export default defineComponent({
       }
     },
     tagline() {
-      return this.state.flaskConfig.tagline || 'Transport simulation data visualizer'
+      return this.state.flaskConfig.tagline || 'Transport simulation data visualizer (soon to include AequilibraE support!)'
     },
   },
 
