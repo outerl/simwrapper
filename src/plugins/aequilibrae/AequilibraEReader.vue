@@ -200,6 +200,7 @@ const MyComponent = defineComponent({
       // Apply default view from config (only switch to map if geometry exists)
       if (this.vizDetails.view === 'map' && this.hasGeometry) {
         this.viewMode = 'map'
+        this.setMapCenter()
       } else if (this.vizDetails.view === 'table') {
         this.viewMode = 'table'
       }
@@ -258,8 +259,7 @@ const MyComponent = defineComponent({
       }
     },
     
-
-    handleFeatureClick(feature: any) {
+    handleFeatureClick(feature: any) { // TODO: great opportunity to add something cool!
       // Handle click on map features
       if (!feature) return
       console.log('Clicked feature:', feature.properties)
@@ -289,6 +289,25 @@ const MyComponent = defineComponent({
       }
       
       return lines.join('<br/>')
+    },
+
+    setMapCenter() {
+      let center = this.vizDetails.center
+      
+      // Handle string format "lon, lat"
+      if (center && typeof center === 'string') {
+        center = center.split(',').map((c: string) => parseFloat(c.trim())) as [number, number]
+      }
+
+      if (center && Array.isArray(center) && center.length === 2) {
+        globalStore.commit('setMapCamera', {
+          longitude: center[0],
+          latitude: center[1],
+          zoom: this.vizDetails.zoom || 9,
+          bearing: this.vizDetails.bearing || 0,
+          pitch: this.vizDetails.pitch || 0,
+        })
+      }
     },
   },
 })

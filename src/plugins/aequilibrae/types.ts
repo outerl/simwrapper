@@ -17,4 +17,9 @@ export interface VizDetails {
   database: string;
   view: 'table' | 'map' | '';
   layers: { [key: string]: LayerConfig };
+  center?: [number, number];
+  zoom?: number;
+  projection?: string;
+  bearing?: number;
+  pitch?: number;
 }
