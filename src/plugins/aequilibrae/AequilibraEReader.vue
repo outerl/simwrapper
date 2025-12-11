@@ -68,7 +68,12 @@ const MyComponent = defineComponent({
   data() {
     return {
       globalState: globalStore.state,
-      vizDetails: { title: '', description: '', database: '' },
+      vizDetails: { title: '', description: '', database: '', view: '' } as {
+        title: string
+        description: string
+        database: string
+        view: 'table' | 'map' | ''
+      },
       loadingText: '',
       id: `id-${Math.floor(1e12 * Math.random())}` as any,
       layerId: `aeq-layer-${Math.floor(1e12 * Math.random())}` as string,
@@ -161,6 +166,13 @@ const MyComponent = defineComponent({
         await this.extractGeometryData()
       }
 
+      // Apply default view from config (only switch to map if geometry exists)
+      if (this.vizDetails.view === 'map' && this.hasGeometry) {
+        this.viewMode = 'map'
+      } else if (this.vizDetails.view === 'table') {
+        this.viewMode = 'table'
+      }
+
       this.isLoaded = true
       this.loadingText = ''
       this.$emit('isLoaded')
@@ -184,6 +196,8 @@ const MyComponent = defineComponent({
         const dbFile = this.config.database || this.config.file
         console.log('Database file from config:', dbFile)
         this.vizDetails.database = dbFile.startsWith('/') ? dbFile : `${this.subfolder}/${dbFile}`
+        // Capture view preference from config
+        if (this.config.view) this.vizDetails.view = this.config.view
         console.log('Final database path:', this.vizDetails.database)
         this.$emit('titles', this.vizDetails.title || dbFile || 'AequilibraE Database')
       } else if (this.yamlConfig) {
@@ -211,6 +225,7 @@ const MyComponent = defineComponent({
           title: config.title || this.yamlConfig,
           description: config.description || '',
           database: databasePath,
+          view: config.view || '',
         }
         
         console.log('Final database path:', this.vizDetails.database)
