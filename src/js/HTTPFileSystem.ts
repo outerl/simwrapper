@@ -17,6 +17,7 @@ enum FileSystemType {
   GITHUB,
   FLASK,
   LAKEFS,
+  S3,
 }
 
 naturalSort.insensitive = true
@@ -42,6 +43,7 @@ class HTTPFileSystem {
   private isGithub: boolean
   private isZIB: boolean
   private isFlask: boolean
+  private isS3: boolean
   private type: FileSystemType
   private fileLinkLookup: any = {}
 
@@ -54,12 +56,14 @@ class HTTPFileSystem {
     this.isGithub = !!project.isGithub
     this.isFlask = !!project.flask
     this.isZIB = !!project.isZIB
+    this.isS3 = !!project.isS3
 
     this.type = FileSystemType.FETCH
     if (this.fsHandle) this.type = FileSystemType.CHROME
     if (this.isGithub) this.type = FileSystemType.GITHUB
     if (this.isFlask) this.type = FileSystemType.FLASK
     if (this.isZIB) this.type = FileSystemType.LAKEFS
+    if (this.isS3) this.type = FileSystemType.S3
 
     this.baseUrl = project.baseURL
     if (!project.baseURL.endsWith('/')) this.baseUrl += '/'
@@ -533,6 +537,9 @@ class HTTPFileSystem {
         case FileSystemType.FLASK:
           dirEntry = await this._getDirectoryFromAzure(stillScaryPath)
           break
+        case FileSystemType.S3:
+          dirEntry = await this._getDirectoryFromS3(stillScaryPath)
+          break
         case FileSystemType.LAKEFS:
         case FileSystemType.FETCH:
         default:
@@ -615,6 +622,73 @@ class HTTPFileSystem {
       }
     }
     return contents
+  }
+
+  async _getDirectoryFromS3(stillScaryPath: string): Promise<DirectoryEntry> {
+    // S3 uses a list API with prefix and delimiter to simulate directories
+    // https://docs.aws.amazon.com/AmazonS3/latest/API/API_ListObjectsV2.html
+    
+    let prefix = stillScaryPath.replace(/^\/+/, '') // remove leading slashes
+    prefix = prefix.replaceAll('//', '/')
+    
+    // Build the S3 list URL with query parameters
+    const listUrl = `${this.baseUrl}?list-type=2&delimiter=/&prefix=${encodeURIComponent(prefix)}`
+    
+    const response = await fetch(listUrl)
+    if (response.status !== 200) {
+      console.warn('S3 list status:', response.status)
+      throw response
+    }
+    
+    const xmlText = await response.text()
+    return this.buildListFromS3Xml(xmlText, prefix)
+  }
+
+  private buildListFromS3Xml(xmlText: string, prefix: string): DirectoryEntry {
+    const dirs: string[] = []
+    const files: string[] = []
+    
+    const parser = new DOMParser()
+    const xmlDoc = parser.parseFromString(xmlText, 'text/xml')
+    
+    // Get files from <Contents> elements
+    const contents = xmlDoc.getElementsByTagName('Contents')
+    for (let i = 0; i < contents.length; i++) {
+      const keyElement = contents[i].getElementsByTagName('Key')[0]
+      if (keyElement && keyElement.textContent) {
+        let key = keyElement.textContent
+        // Remove the prefix to get the relative filename
+        if (key.startsWith(prefix)) {
+          key = key.substring(prefix.length)
+        }
+        // Skip if it's the directory itself or empty
+        if (key && key !== '' && !key.endsWith('/')) {
+          files.push(key)
+        }
+      }
+    }
+    
+    // Get directories from <CommonPrefixes> elements
+    const commonPrefixes = xmlDoc.getElementsByTagName('CommonPrefixes')
+    for (let i = 0; i < commonPrefixes.length; i++) {
+      const prefixElement = commonPrefixes[i].getElementsByTagName('Prefix')[0]
+      if (prefixElement && prefixElement.textContent) {
+        let dirPath = prefixElement.textContent
+        // Remove the base prefix to get the relative directory name
+        if (dirPath.startsWith(prefix)) {
+          dirPath = dirPath.substring(prefix.length)
+        }
+        // Remove trailing slash
+        if (dirPath.endsWith('/')) {
+          dirPath = dirPath.slice(0, -1)
+        }
+        if (dirPath && dirPath !== '') {
+          dirs.push(dirPath)
+        }
+      }
+    }
+    
+    return { dirs, files, handles: {} }
   }
 
   async _getDirectoryFromURL(stillScaryPath: string) {

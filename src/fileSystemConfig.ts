@@ -140,6 +140,7 @@ let fileSystems: FileSystemConfig[] = [
     thumbnail: 'images/thumb-localfiles.jpg',
     example: true,
     baseURL: 'https://aeqwrapper.s3.amazonaws.com/',
+    isS3: true,
   },
   {
     name: 'VSP/ZIB LakeFS',
