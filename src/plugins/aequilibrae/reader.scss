@@ -1,0 +1,11 @@
+.c-aequilibrae-viewer { position: absolute; top: 0; bottom: 0; left: 0; right: 0; background-color: var(--bgCardFrame); display: flex; flex-direction: column; }
+.view-toggle-bar { padding: 0.5rem; border-bottom: 1px solid var(--borderColor); background-color: var(--bgPanel); z-index: 10; }
+.viewer { flex: 1; overflow: auto; padding: 0.5rem 1rem; }
+.map-viewer { position: relative; flex: 1; width: 100%; height: 100%; }
+.loading { padding: 2rem; text-align: center; font-size: 1.2rem; color: var(--textFancy); }
+.database-content { padding: 0.5rem 0; }
+.database-content h3 { margin-bottom: 1rem; color: var(--textFancy); }
+.database-content h4 { margin-top: 1.5rem; margin-bottom: 0.5rem; color: var(--link); font-weight: bold; }
+.database-content p { margin: 0.25rem 0; color: var(--text); }
+.database-content .columns { margin-left: 1rem; font-size: 0.9rem; color: var(--textFancy); }
+.database-content .columns div { margin: 0.1rem 0; }
