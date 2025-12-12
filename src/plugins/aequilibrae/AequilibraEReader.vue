@@ -98,6 +98,13 @@ const MyComponent = defineComponent({
     },
   },
 
+  watch: {
+    resize() {
+      // Trigger redraw when panel is resized
+      this.redrawCounter += 1
+    },
+  },
+
   async mounted() {
     try {
       this.aeqFileSystem = new AequilibraEFileSystem(this.fileSystem, globalStore)

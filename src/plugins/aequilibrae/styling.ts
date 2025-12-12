@@ -61,19 +61,21 @@ const buildCategoryEncoder = (colors: Record<string, string>, defaultColor: stri
 
 const applyQuantitativeMapping = (
   values: (number | null)[],
-  range: [number, number],
+  dataRange: [number, number],
+  outputRange: [number, number],
   target: Float32Array,
   stride: number,
   offset: number
 ) => {
   const nums = values.filter((v): v is number => v !== null)
-  const [dataMin, dataMax] = range
+  const [dataMin, dataMax] = dataRange
+  const [outMin, outMax] = outputRange
   const scale = dataMax === dataMin ? 0 : 1 / (dataMax - dataMin)
   
   for (let i = 0; i < values.length; i++) {
     const num = values[i]
     const normalized = num === null ? 0 : (num - dataMin) * scale
-    target[i * stride + offset] = Math.max(range[0], Math.min(range[1], normalized * (range[1] - range[0]) + range[0]))
+    target[i * stride + offset] = Math.max(outMin, Math.min(outMax, normalized * (outMax - outMin) + outMin))
   }
 }
 
@@ -197,7 +199,7 @@ export function buildStyleArrays(args: BuildArgs): BuildResult {
         }
       } else if ('column' in style.lineWidth) {
         const values = propsArr.map(p => toNumber(p?.[style.lineWidth!.column]))
-        applyQuantitativeMapping(values, style.lineWidth.range ?? [1, 6], lineWidths, 1, 0)
+        applyQuantitativeMapping(values, style.lineWidth.dataRange ?? [1, 6], style.lineWidth.widthRange ?? [1, 6], lineWidths, 1, 0)
       }
     }
 
@@ -209,7 +211,7 @@ export function buildStyleArrays(args: BuildArgs): BuildResult {
         }
       } else if ('column' in style.pointRadius) {
         const values = propsArr.map(p => toNumber(p?.[style.pointRadius!.column]))
-        applyQuantitativeMapping(values, style.pointRadius.range ?? [2, 12], pointRadii, 1, 0)
+        applyQuantitativeMapping(values, style.pointRadius.dataRange ?? [2, 12], style.pointRadius.widthRange ?? [2, 12], pointRadii, 1, 0)
       }
     }
 
@@ -221,7 +223,7 @@ export function buildStyleArrays(args: BuildArgs): BuildResult {
         }
       } else if ('column' in style.fillHeight) {
         const values = propsArr.map(p => toNumber(p?.[style.fillHeight!.column]))
-        applyQuantitativeMapping(values, style.fillHeight.range ?? [0, 100], fillHeights, 1, 0)
+        applyQuantitativeMapping(values, style.fillHeight.dataRange ?? [0, 100], style.fillHeight.widthRange ?? [0, 100], fillHeights, 1, 0)
       }
     }
   }

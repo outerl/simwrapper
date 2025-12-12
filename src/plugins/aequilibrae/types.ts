@@ -63,10 +63,8 @@ export type ColorStyle = {
 
 export type NumericStyle = {
   column: string
-  min?: number
-  max?: number
-  outputMin?: number
-  outputMax?: number
+  dataRange?: [number, number]
+  widthRange?: [number, number]
 }
 
 export type LayerStyle = {
