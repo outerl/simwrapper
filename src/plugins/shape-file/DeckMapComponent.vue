@@ -48,6 +48,7 @@ export default defineComponent({
     redraw: { type: Number, required: true },
     screenshot: { type: Number, required: true },
     viewId: { type: Number, required: true },
+    lineWidthUnits: { type: String, required: false, default: 'pixels' },
   },
 
   data() {
@@ -322,7 +323,7 @@ export default defineComponent({
               this.highlightedLinkIndex == -1 ? null : this.highlightedLinkIndex,
             autoHighlight: true,
             highlightColor: [255, 255, 255, 160],
-            lineWidthUnits: 'pixels',
+            lineWidthUnits: this.lineWidthUnits,
             lineWidthScale: 1,
             lineWidthMinPixels: 0, //  typeof lineWidths === 'number' ? 0 : 1,
             lineWidthMaxPixels: 50,
@@ -386,7 +387,7 @@ export default defineComponent({
               this.highlightedLinkIndex == -1 ? null : this.highlightedLinkIndex,
             highlightColor: [255, 255, 255, 160], // [255, 0, 204, 255],
             opacity: 1,
-            widthUnits: 'pixels',
+            widthUnits: this.lineWidthUnits,
             widthMinPixels: 1,
             offsetDirection: OFFSET_DIRECTION.RIGHT,
             transitions: {

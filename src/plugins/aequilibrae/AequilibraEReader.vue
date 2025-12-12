@@ -41,6 +41,7 @@
       :redraw="redrawCounter"
       :screenshot="0"
       :viewId="layerId"
+      :lineWidthUnits="'meters'"
     )
 
 </template>
