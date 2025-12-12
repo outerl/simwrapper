@@ -47,3 +47,60 @@ export interface VizDetails {
   bearing?: number;
   pitch?: number;
 }
+
+// Color and styling types
+export type RGBA = [number, number, number, number]
+export type RGB = [number, number, number]
+
+export type ColorStyle = {
+  column: string
+  type: 'quantitative' | 'categorical'
+  colorScheme?: string
+  colorRange?: [string, string]
+  min?: number
+  max?: number
+}
+
+export type NumericStyle = {
+  column: string
+  min?: number
+  max?: number
+  outputMin?: number
+  outputMax?: number
+}
+
+export type LayerStyle = {
+  fillColor?: ColorStyle
+  lineColor?: ColorStyle
+  lineWidth?: NumericStyle
+  pointRadius?: NumericStyle
+  fillHeight?: NumericStyle
+  filter?: { column: string; include?: any[]; exclude?: any[] }
+}
+
+export type LayerConfigLite = {
+  table?: string
+  geometry?: string
+  style?: LayerStyle
+}
+
+export type BuildArgs = {
+  features: Array<{ properties: any; geometry: any }>
+  layers: Record<string, LayerConfigLite>
+  defaults?: {
+    fillColor?: string
+    lineColor?: string
+    lineWidth?: number
+    pointRadius?: number
+    fillHeight?: number
+  }
+}
+
+export type BuildResult = {
+  fillColors: Uint8ClampedArray
+  lineColors: Uint8ClampedArray
+  lineWidths: Float32Array
+  pointRadii: Float32Array
+  fillHeights: Float32Array
+  featureFilter: Float32Array
+}

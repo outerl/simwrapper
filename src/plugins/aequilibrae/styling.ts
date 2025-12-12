@@ -1,280 +1,80 @@
-type RGBA = [number, number, number, number]
-type RGB = [number, number, number]
+import * as cartoColors from 'cartocolor'
+import { RGBA, RGB, ColorStyle, NumericStyle, LayerStyle, BuildArgs, BuildResult } from './types'
 
-type CategoricalMapping = {
-  column: string
-  scheme?: string
-  include?: (string | number | boolean | null)[]
-  exclude?: (string | number | boolean | null)[]
+const hexToRgb = (hex: string): RGB => {
+  const match = hex.replace('#', '').match(/.{1,2}/g) || ['80', '80', '80']
+  return [parseInt(match[0], 16), parseInt(match[1], 16), parseInt(match[2], 16)]
 }
 
-type QuantitativeMapping = {
-  column: string
-  range: [number, number]
+const hexToRgba = (hex: string, alpha: number = 1): RGBA => {
+  const match = hex.replace('#', '').match(/.{1,2}/g) || ['80', '80', '80']
+  return [parseInt(match[0], 16), parseInt(match[1], 16), parseInt(match[2], 16), Math.round(alpha * 255)]
 }
 
-type QuantitativeColorMapping = {
-  column: string
-  colorRange?: [string, string] // e.g., ['#ffffcc', '#006837']
-  scheme?: string // for sequential schemes like 'YlGn'
+
+const getPaletteColors = (name: string, numColors: number): string[] => {
+  const palette = (cartoColors as any)[name || 'YlGn']
+  if (!palette) return Array(numColors).fill('#808080')
+  const sizes = Object.keys(palette)
+    .map(Number)
+    .filter((n) => n > 0)
+    .sort((a, b) => a - b)
+  const size = sizes.find((s) => s >= numColors) || sizes[sizes.length - 1]
+  return palette[size] || Array(numColors).fill('#808080')
 }
 
-type StyleMapping = CategoricalMapping | QuantitativeMapping | QuantitativeColorMapping
-
-type LayerStyle = {
-  fillColor?: StyleMapping
-  lineColor?: StyleMapping
-  lineWidth?: StyleMapping
-  pointRadius?: StyleMapping
-  fillHeight?: StyleMapping
-  filter?: StyleMapping
+const toNumber = (value: any): number | null => {
+  const num = Number(value)
+  return isNaN(num) ? null : num
 }
 
-type LayerConfigLite = {
-  table?: string
-  geometry?: string
-  style?: LayerStyle
-}
-
-type BuildArgs = {
-  features: Array<{ properties: any; geometry: any }>
-  layers: Record<string, LayerConfigLite>
-  defaults?: {
-    fillColor?: string
-    lineColor?: string
-    lineWidth?: number
-    pointRadius?: number
-    fillHeight?: number
+const buildColorEncoder = (values: any[], style: ColorStyle) => {
+  const nums = values.map(toNumber).filter((v): v is number => v !== null)
+  const [min, max] = 'range' in style && style.range
+    ? style.range
+    : [nums.length ? Math.min(...nums) : 0, nums.length ? Math.max(...nums) : 1]
+  
+  const paletteName = 'palette' in style ? style.palette : 'YlGn'
+  const numColors = 'numColors' in style ? style.numColors : 7
+  const colors = getPaletteColors(paletteName, numColors).map(h => hexToRgba(h, 1))
+  
+  const scale = max === min ? 0 : (numColors - 1) / (max - min)
+  
+  return (value: any) => {
+    const num = toNumber(value) ?? min
+    const idx = Math.round((num - min) * scale)
+    return colors[Math.max(0, Math.min(numColors - 1, idx))]
   }
 }
 
-type BuildResult = {
-  fillColors: Uint8ClampedArray
-  lineColors: Uint8ClampedArray
-  lineWidths: Float32Array
-  pointRadii: Float32Array
-  fillHeights: Float32Array
-  featureFilter: Float32Array
+const buildCategoryEncoder = (colors: Record<string, string>, defaultColor: string = '#808080') => {
+  const colorMap = new Map<string, RGBA>()
+  for (const [key, hex] of Object.entries(colors)) {
+    colorMap.set(String(key), hexToRgb(hex))
+  }
+  const defaultRgba = hexToRgb(defaultColor)
+  
+  return (value: any) => {
+    return colorMap.get(String(value)) || defaultRgba
+  }
 }
 
-// Basic palettes; expand as needed
-const palettes: Record<string, string[]> = {
-  Category10: [
-    '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd',
-    '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf',
-  ],
-  Set2: ['#66c2a5', '#fc8d62', '#8da0cb', '#e78ac3', '#a6d854', '#ffd92f', '#e5c494', '#b3b3b3'],
-  // Sequential palettes for quantitative color mapping
-  YlGn: ['#ffffcc', '#d9f0a3', '#addd8e', '#78c679', '#31a354', '#006837'],
-  Blues: ['#eff3ff', '#c6dbef', '#9ecae1', '#6baed6', '#3182bd', '#08519c'],
-  Reds: ['#fee5d9', '#fcbba1', '#fc9272', '#fb6a4a', '#de2d26', '#a50f15'],
-  // Diverging palettes - useful for ratio/deviation visualization
-  RdYlGn: ['#d73027', '#fc8d59', '#fee08b', '#d9ef8b', '#91cf60', '#1a9850'],
-  GnRd: ['#1a9850', '#91cf60', '#d9ef8b', '#fee08b', '#fc8d59', '#d73027'],
-  RdBu: ['#b2182b', '#ef8a62', '#fddbc7', '#d1e5f0', '#67a9cf', '#2166ac'],
-  PiYG: ['#c51b7d', '#e9a3c9', '#fde0ef', '#e6f5d0', '#a1d76a', '#4d9221'],
-  // Viridis-like for continuous data
-  Viridis: ['#440154', '#482878', '#3e4a89', '#31688e', '#26838f', '#1f9e89', '#6cce5a', '#b6de2b', '#fee825'],
-}
-
-function hexToRgba(hex: string, alpha = 255): RGBA {
-  const h = hex.replace('#', '')
-  const bigint = parseInt(h.length === 3 ? h.split('').map(c => c + c).join('') : h, 16)
-  const r = (bigint >> 16) & 255
-  const g = (bigint >> 8) & 255
-  const b = bigint & 255
-  return [r, g, b, alpha]
-}
-
-function hexToRgb(hex: string): RGB {
-  const h = hex.replace('#', '')
-  const bigint = parseInt(h.length === 3 ? h.split('').map(c => c + c).join('') : h, 16)
-  const r = (bigint >> 16) & 255
-  const g = (bigint >> 8) & 255
-  const b = bigint & 255
-  return [r, g, b]
-}
-
-function resolveDefaultColor(hex?: string, fallback: string): RGBA {
-  return hexToRgba(hex || fallback)
-}
-
-function resolveDefaultLineColor(hex?: string, fallback: string): RGB {
-  return hexToRgb(hex || fallback)
-}
-
-function isNumeric(val: any): val is number {
-  return typeof val === 'number' && !Number.isNaN(val)
-}
-
-function toNumber(val: any): number | null {
-  if (isNumeric(val)) return val
-  const num = Number(val)
-  return Number.isFinite(num) ? num : null
-}
-
-function scaleLinear(value: number, domain: [number, number], range: [number, number]) {
-  const [d0, d1] = domain
-  const [r0, r1] = range
-  if (d0 === d1) return (r0 + r1) / 2
-  const t = (value - d0) / (d1 - d0)
-  return r0 + t * (r1 - r0)
-}
-
-function interpolateColor(t: number, colors: RGBA[]): RGBA {
-  if (colors.length === 0) return [128, 128, 128, 255]
-  if (colors.length === 1) return colors[0]
-  const clampedT = Math.max(0, Math.min(1, t))
-  const segment = clampedT * (colors.length - 1)
-  const i = Math.floor(segment)
-  const f = segment - i
-  const c0 = colors[Math.min(i, colors.length - 1)]
-  const c1 = colors[Math.min(i + 1, colors.length - 1)]
-  return [
-    Math.round(c0[0] + f * (c1[0] - c0[0])),
-    Math.round(c0[1] + f * (c1[1] - c0[1])),
-    Math.round(c0[2] + f * (c1[2] - c0[2])),
-    Math.round(c0[3] + f * (c1[3] - c0[3])),
-  ]
-}
-
-function interpolateColorRgb(t: number, colors: RGB[]): RGB {
-  if (colors.length === 0) return [128, 128, 128]
-  if (colors.length === 1) return colors[0]
-  const clampedT = Math.max(0, Math.min(1, t))
-  const segment = clampedT * (colors.length - 1)
-  const i = Math.floor(segment)
-  const f = segment - i
-  const c0 = colors[Math.min(i, colors.length - 1)]
-  const c1 = colors[Math.min(i + 1, colors.length - 1)]
-  return [
-    Math.round(c0[0] + f * (c1[0] - c0[0])),
-    Math.round(c0[1] + f * (c1[1] - c0[1])),
-    Math.round(c0[2] + f * (c1[2] - c0[2])),
-  ]
-}
-
-/**
- * Build a quantitative color encoder for fill colors (RGBA)
- * @param values - Array of numeric values to encode
- * @param scheme - Color scheme name (e.g., 'RdYlGn', 'Blues')
- * @param colorRange - Optional custom color range as [startHex, endHex]
- * @param dataRange - Optional data range [min, max] to clamp values (prevents outliers from dominating)
- */
-function buildQuantitativeColorEncoder(
+const applyQuantitativeMapping = (
   values: (number | null)[],
-  scheme = 'YlGn',
-  colorRange?: [string, string],
-  dataRange?: [number, number]
-) {
+  range: [number, number],
+  target: Float32Array,
+  stride: number,
+  offset: number
+) => {
   const nums = values.filter((v): v is number => v !== null)
+  const [dataMin, dataMax] = range
+  const scale = dataMax === dataMin ? 0 : 1 / (dataMax - dataMin)
   
-  // Use provided dataRange or auto-compute from data
-  let min: number, max: number
-  if (dataRange && dataRange.length === 2) {
-    min = dataRange[0]
-    max = dataRange[1]
-  } else {
-    min = nums.length ? Math.min(...nums) : 0
-    max = nums.length ? Math.max(...nums) : 1
+  for (let i = 0; i < values.length; i++) {
+    const num = values[i]
+    const normalized = num === null ? 0 : (num - dataMin) * scale
+    target[i * stride + offset] = Math.max(range[0], Math.min(range[1], normalized * (range[1] - range[0]) + range[0]))
   }
-  
-  let colors: RGBA[]
-  if (colorRange) {
-    colors = [hexToRgba(colorRange[0]), hexToRgba(colorRange[1])]
-  } else {
-    const palette = palettes[scheme] || palettes.YlGn
-    colors = palette.map(c => hexToRgba(c))
-  }
-  
-  return (v: number | null) => {
-    const val = v ?? min
-    // Clamp value to range before computing t
-    const clampedVal = Math.max(min, Math.min(max, val))
-    const t = max === min ? 0.5 : (clampedVal - min) / (max - min)
-    return interpolateColor(t, colors)
-  }
-}
-
-
-/**
- * Build a quantitative color encoder for line colors (RGB)
- * @param values - Array of numeric values to encode
- * @param scheme - Color scheme name (e.g., 'RdYlGn', 'Blues')
- * @param colorRange - Optional custom color range as [startHex, endHex]
- * @param dataRange - Optional data range [min, max] to clamp values (prevents outliers from dominating)
- */
-function buildQuantitativeLineColorEncoder(
-  values: (number | null)[],
-  scheme = 'YlGn',
-  colorRange?: [string, string],
-  dataRange?: [number, number]
-) {
-  const nums = values.filter((v): v is number => v !== null)
-  
-  // Use provided dataRange or auto-compute from data
-  let min: number, max: number
-  if (dataRange && dataRange.length === 2) {
-    min = dataRange[0]
-    max = dataRange[1]
-  } else {
-    min = nums.length ? Math.min(...nums) : 0
-    max = nums.length ? Math.max(...nums) : 1
-  }
-  
-  let colors: RGB[]
-  if (colorRange) {
-    colors = [hexToRgb(colorRange[0]), hexToRgb(colorRange[1])]
-  } else {
-    const palette = palettes[scheme] || palettes.YlGn
-    colors = palette.map(c => hexToRgb(c))
-  }
-  
-  return (v: number | null) => {
-    const val = v ?? min
-    // Clamp value to range before computing t
-    const clampedVal = Math.max(min, Math.min(max, val))
-    const t = max === min ? 0.5 : (clampedVal - min) / (max - min)
-    return interpolateColorRgb(t, colors)
-  }
-}
-
-function isCategoricalColorMapping(mapping: any): boolean {
-  // If it has colorRange or a sequential scheme, treat as quantitative
-  if (mapping.colorRange) return false
-  if (mapping.range && Array.isArray(mapping.range) && typeof mapping.range[0] === 'number') return false
-  // Sequential and diverging palette names (quantitative/continuous)
-  const quantitativeSchemes = [
-    'YlGn', 'Blues', 'Reds', 'Greens', 'Oranges', 'Purples', 'YlOrRd', 'YlOrBr',
-    'RdYlGn', 'RdBu', 'PiYG',  // Diverging - great for ratios
-    'Viridis',                   // Perceptually uniform
-  ]
-  if (mapping.scheme && quantitativeSchemes.includes(mapping.scheme)) return false
-  return true
-}
-
-function buildCategoricalColorEncoder(values: any[], scheme = 'Category10') {
-  const palette = palettes[scheme] || palettes.Category10
-  const domain = Array.from(new Set(values.map(v => v)))
-  const map = new Map<any, RGBA>()
-  domain.forEach((v, i) => map.set(v, hexToRgba(palette[i % palette.length])))
-  return (v: any) => map.get(v) || hexToRgba('#999999')
-}
-
-function buildCategoricalLineColorEncoder(values: any[], scheme = 'Category10') {
-  const palette = palettes[scheme] || palettes.Category10
-  const domain = Array.from(new Set(values.map(v => v)))
-  const map = new Map<any, RGB>()
-  domain.forEach((v, i) => map.set(v, hexToRgb(palette[i % palette.length])))
-  return (v: any) => map.get(v) || hexToRgb('#999999')
-}
-
-function buildQuantEncoder(values: (number | null)[], range: [number, number]) {
-  const nums = values.filter((v): v is number => v !== null)
-  const min = nums.length ? Math.min(...nums) : 0
-  const max = nums.length ? Math.max(...nums) : 1
-  const domain: [number, number] = [min, max]
-  return (v: number | null) => scaleLinear(v ?? min, domain, range)
 }
 
 export function buildStyleArrays(args: BuildArgs): BuildResult {
@@ -303,8 +103,8 @@ export function buildStyleArrays(args: BuildArgs): BuildResult {
   }
 
   // Global defaults used if no layer style present
-  const defaultFill = resolveDefaultColor(defaults.fillColor, '#59a14f')
-  const defaultLine = resolveDefaultLineColor(defaults.lineColor, '#4e79a7')
+  const defaultFill = hexToRgba(defaults.fillColor || '#59a14f', 1)
+  const defaultLine = hexToRgb(defaults.lineColor || '#4e79a7')
   const defaultWidth = defaults.lineWidth ?? 2
   const defaultRadius = defaults.pointRadius ?? 4
   const defaultHeight = defaults.fillHeight ?? 0
@@ -342,95 +142,86 @@ export function buildStyleArrays(args: BuildArgs): BuildResult {
       }
     }
 
-    // fillColor - categorical or quantitative
-    if (style.fillColor && 'column' in style.fillColor) {
-      const col = (style.fillColor as any).column
-      const values = propsArr.map(p => p?.[col])
-      
-      if (isCategoricalColorMapping(style.fillColor)) {
-        const encoder = buildCategoricalColorEncoder(values, (style.fillColor as any).scheme)
+    if (style.fillColor) {
+      if (typeof style.fillColor === 'string') {
+        // Static hex color
+        const color = hexToRgba(style.fillColor, 1)
         for (let j = 0; j < idxs.length; j++) {
-          const i = idxs[j]
-          fillColors.set(encoder(values[j]), i * 4)
+          fillColors.set(color, idxs[j] * 4)
         }
-      } else {
-        const numValues = values.map(v => toNumber(v))
-        // range can be used to clamp data values (prevents outliers from dominating)
-        const dataRange = (style.fillColor as any).range as [number, number] | undefined
-        const encoder = buildQuantitativeColorEncoder(
-          numValues,
-          (style.fillColor as any).scheme,
-          (style.fillColor as any).colorRange,
-          dataRange
-        )
+      } else if ('colors' in style.fillColor) {
+        const encoder = buildCategoryEncoder(style.fillColor.colors, '#808080')
         for (let j = 0; j < idxs.length; j++) {
-          const i = idxs[j]
-          fillColors.set(encoder(numValues[j]), i * 4)
+          fillColors.set(encoder(propsArr[j]?.[style.fillColor.column]), idxs[j] * 4)
+        }
+      } else if ('column' in style.fillColor) {
+        // Column-based encoding
+        const encoder = buildColorEncoder(propsArr.map(p => p?.[style.fillColor!.column]), style.fillColor)
+        for (let j = 0; j < idxs.length; j++) {
+          fillColors.set(encoder(propsArr[j]?.[style.fillColor.column]), idxs[j] * 4)
         }
       }
     }
 
-    // lineColor - categorical or quantitative (RGB)
-    if (style.lineColor && 'column' in style.lineColor) {
-      const col = (style.lineColor as any).column
-      const values = propsArr.map(p => p?.[col])
-      
-      if (isCategoricalColorMapping(style.lineColor)) {
-        const encoder = buildCategoricalLineColorEncoder(values, (style.lineColor as any).scheme)
+    if (style.lineColor) {
+      if (typeof style.lineColor === 'string') {
+        // Static hex color
+        const rgb = hexToRgb(style.lineColor)
         for (let j = 0; j < idxs.length; j++) {
-          const i = idxs[j]
-          lineColors.set(encoder(values[j]), i * 3)  // RGB offset
+          lineColors[idxs[j] * 3] = rgb[0]
+          lineColors[idxs[j] * 3 + 1] = rgb[1]
+          lineColors[idxs[j] * 3 + 2] = rgb[2]
         }
-      } else {
-        const numValues = values.map(v => toNumber(v))
-        // range can be used to clamp data values (prevents outliers from dominating)
-        const dataRange = (style.lineColor as any).range as [number, number] | undefined
-        const encoder = buildQuantitativeLineColorEncoder(
-          numValues,
-          (style.lineColor as any).scheme,
-          (style.lineColor as any).colorRange,
-          dataRange
-        )
+      } else if ('colors' in style.lineColor) {
+        const encoder = buildCategoryEncoder(style.lineColor.colors, '#808080')
         for (let j = 0; j < idxs.length; j++) {
-          const i = idxs[j]
-          lineColors.set(encoder(numValues[j]), i * 3)  // RGB offset
+          lineColors.set(encoder(propsArr[j]?.[style.lineColor.column]), idxs[j] * 3)
+        }
+      } else if ('column' in style.lineColor) {
+        // Column-based encoding
+        const encoder = buildColorEncoder(propsArr.map(p => p?.[style.lineColor!.column]), style.lineColor)
+        for (let j = 0; j < idxs.length; j++) {
+          const [r, g, b] = encoder(propsArr[j]?.[style.lineColor.column])
+          lineColors[idxs[j] * 3] = r
+          lineColors[idxs[j] * 3 + 1] = g
+          lineColors[idxs[j] * 3 + 2] = b
         }
       }
     }
 
-    // lineWidth quantitative
-    if (style.lineWidth && 'column' in style.lineWidth) {
-      const col = (style.lineWidth as any).column
-      const range: [number, number] = (style.lineWidth as any).range ?? [1, 6]
-      const values = propsArr.map(p => toNumber(p?.[col]))
-      const encoder = buildQuantEncoder(values, range)
-      for (let j = 0; j < idxs.length; j++) {
-        const i = idxs[j]
-        lineWidths[i] = encoder(values[j])
+    // lineWidth - handle both static and column-based
+    if (style.lineWidth) {
+      if (typeof style.lineWidth === 'number') {
+        for (let j = 0; j < idxs.length; j++) {
+          lineWidths[idxs[j]] = style.lineWidth
+        }
+      } else if ('column' in style.lineWidth) {
+        const values = propsArr.map(p => toNumber(p?.[style.lineWidth!.column]))
+        applyQuantitativeMapping(values, style.lineWidth.range ?? [1, 6], lineWidths, 1, 0)
       }
     }
 
-    // pointRadius quantitative
-    if (style.pointRadius && 'column' in style.pointRadius) {
-      const col = (style.pointRadius as any).column
-      const range: [number, number] = (style.pointRadius as any).range ?? [2, 12]
-      const values = propsArr.map(p => toNumber(p?.[col]))
-      const encoder = buildQuantEncoder(values, range)
-      for (let j = 0; j < idxs.length; j++) {
-        const i = idxs[j]
-        pointRadii[i] = encoder(values[j])
+    // pointRadius - handle both static and column-based
+    if (style.pointRadius) {
+      if (typeof style.pointRadius === 'number') {
+        for (let j = 0; j < idxs.length; j++) {
+          pointRadii[idxs[j]] = style.pointRadius
+        }
+      } else if ('column' in style.pointRadius) {
+        const values = propsArr.map(p => toNumber(p?.[style.pointRadius!.column]))
+        applyQuantitativeMapping(values, style.pointRadius.range ?? [2, 12], pointRadii, 1, 0)
       }
     }
 
-    // fillHeight quantitative
-    if (style.fillHeight && 'column' in style.fillHeight) {
-      const col = (style.fillHeight as any).column
-      const range: [number, number] = (style.fillHeight as any).range ?? [0, 100]
-      const values = propsArr.map(p => toNumber(p?.[col]))
-      const encoder = buildQuantEncoder(values, range)
-      for (let j = 0; j < idxs.length; j++) {
-        const i = idxs[j]
-        fillHeights[i] = encoder(values[j])
+    // fillHeight - handle both static and column-based
+    if (style.fillHeight) {
+      if (typeof style.fillHeight === 'number') {
+        for (let j = 0; j < idxs.length; j++) {
+          fillHeights[idxs[j]] = style.fillHeight
+        }
+      } else if ('column' in style.fillHeight) {
+        const values = propsArr.map(p => toNumber(p?.[style.fillHeight!.column]))
+        applyQuantitativeMapping(values, style.fillHeight.range ?? [0, 100], fillHeights, 1, 0)
       }
     }
   }
