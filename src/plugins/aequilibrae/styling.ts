@@ -28,7 +28,16 @@ const toNumber = (value: any): number | null => {
   return isNaN(num) ? null : num
 }
 
-const buildColorEncoder = (values: any[], style: ColorStyle) => {
+const buildColorEncoder = (values: any[], style: ColorStyle, dataRange: [number, number] | null = null) => {
+  if (dataRange) {
+    // clamp the values to within the data range
+    values = values.map(v => {
+      const num = toNumber(v)
+      if (num === null) return null
+      return Math.max(dataRange[0], Math.min(dataRange[1], num))
+    })
+  }
+
   const nums = values.map(toNumber).filter((v): v is number => v !== null)
   const [min, max] = 'range' in style && style.range
     ? style.range
@@ -158,7 +167,7 @@ export function buildStyleArrays(args: BuildArgs): BuildResult {
         }
       } else if ('column' in style.fillColor) {
         // Column-based encoding
-        const encoder = buildColorEncoder(propsArr.map(p => p?.[style.fillColor!.column]), style.fillColor)
+        const encoder = buildColorEncoder(propsArr.map(p => p?.[style.fillColor!.column]), style.fillColor, style.fillColor.dataRange)
         for (let j = 0; j < idxs.length; j++) {
           fillColors.set(encoder(propsArr[j]?.[style.fillColor.column]), idxs[j] * 4)
         }
@@ -181,7 +190,7 @@ export function buildStyleArrays(args: BuildArgs): BuildResult {
         }
       } else if ('column' in style.lineColor) {
         // Column-based encoding
-        const encoder = buildColorEncoder(propsArr.map(p => p?.[style.lineColor!.column]), style.lineColor)
+        const encoder = buildColorEncoder(propsArr.map(p => p?.[style.lineColor!.column]), style.lineColor, style.lineColor.dataRange)
         for (let j = 0; j < idxs.length; j++) {
           const [r, g, b] = encoder(propsArr[j]?.[style.lineColor.column])
           lineColors[idxs[j] * 3] = r
