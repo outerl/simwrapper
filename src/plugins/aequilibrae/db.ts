@@ -111,14 +111,21 @@ export async function fetchGeoJSONFeatures(
     .map((c: any) => `"${c.name}"`)
     .join(', ');
 
+  // Optionally allow a custom SQL filter from the YAML config for this layer
+  // e.g. layerConfig.sqlFilter = "link_type != 'centroid'"
+  let filterClause = 'geometry IS NOT NULL';
+  if (layerConfig && typeof layerConfig.sqlFilter === 'string' && layerConfig.sqlFilter.trim().length > 0) {
+    filterClause += ` AND (${layerConfig.sqlFilter})`;
+  }
+
   const query = `
     SELECT ${columnNames},
            AsGeoJSON(geometry) as geojson_geom,
            GeometryType(geometry) as geom_type
     FROM "${table.name}"
-    WHERE geometry IS NOT NULL
-    LIMIT 1000000;
+    WHERE ${filterClause};
   `;
+  // LIMIT 1000000
   const rows = await db.exec(query).get.objs;
   const features: any[] = [];
   
