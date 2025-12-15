@@ -2,7 +2,9 @@
 .c-aequilibrae-viewer.flex-col(:class="{'is-thumbnail': thumbnail}")
   .loading(v-if="!isLoaded") {{ loadingText  }}
   .map-viewer(v-show="isLoaded")
-    DeckMapComponent(v-if="geoJsonFeatures.length > 0 && bgLayers && layerId"
+    DeckMapComponent(
+      ref="deckMap"
+      v-if="geoJsonFeatures.length > 0 && bgLayers && layerId"
       :features="geoJsonFeatures"
       :bgLayers="bgLayers"
       :cbTooltip="handleTooltip"
@@ -120,7 +122,12 @@ const MyComponent = defineComponent({
       await this.extractGeometries()
       
       if (this.hasGeometry) this.setMapCenter()
-      this.isLoaded = true
+      this.isLoaded = true;
+      this.$nextTick(() => {
+        if (this.$refs.deckMap && this.$refs.deckMap.mymap) {
+          this.$refs.deckMap.mymap.resize();
+        }
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       console.error('❌ AequilibraE Error:', message)
