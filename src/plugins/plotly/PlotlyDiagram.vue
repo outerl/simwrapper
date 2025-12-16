@@ -259,6 +259,16 @@ const MyComponent = defineComponent({
 
         // Update the 'minXValue' if the minimum value in the 'x' array of the current trace is less than the current 'minXValue'.
         if (xAxisMin <= this.minXValue) this.minXValue = xAxisMin
+
+        // optionally, if a max/min is set for the traces, collect the greatest maxes and least mins to build the layout ranges
+        if (this.traces[i].xaxis_max !== undefined && this.traces[i].xaxis_max > this.maxXValue)
+          this.maxXValue = this.traces[i].xaxis_max
+        if (this.traces[i].yaxis_max !== undefined && this.traces[i].yaxis_max > this.maxYValue)
+          this.maxYValue = this.traces[i].yaxis_max
+        if (this.traces[i].xaxis_min !== undefined && this.traces[i].xaxis_min < this.minXValue)
+          this.minXValue = this.traces[i].xaxis_min
+        if (this.traces[i].yaxis_min !== undefined && this.traces[i].yaxis_min < this.minYValue)
+          this.minYValue = this.traces[i].yaxis_min 
       }
 
       // Set the x-axis and y-axis ranges in the layout based on the calculated 'minXValue', 'maxXValue', 'minYValue', and 'maxYValue'.
@@ -283,6 +293,8 @@ const MyComponent = defineComponent({
       //     this.maxYValue +
       //     ']'
       // )
+
+
     },
     changeDimensions(dim: any) {
       if (dim?.height && dim?.width) {
