@@ -27,6 +27,8 @@
       :viewId="layerId"
       :lineWidthUnits="'meters'"
     )
+    .legend-overlay(v-if="legendItems.length")
+      LegendColors(:items="legendItems" title="Legend")
 
 </template>
 
@@ -38,6 +40,7 @@ import { defineComponent } from 'vue'
 import globalStore from '@/store'
 import AequilibraEFileSystem from '@/plugins/aequilibrae/AequilibraEFileSystem'
 import DeckMapComponent from '@/plugins/shape-file/DeckMapComponent.vue'
+import LegendColors from '@/components/LegendColors.vue'
 import BackgroundLayers from '@/js/BackgroundLayers'
 
 import { FileSystemConfig } from '@/Globals'
@@ -51,6 +54,7 @@ const MyComponent = defineComponent({
   i18n,
   components: {
     DeckMapComponent,
+    LegendColors,
   },
   props: {
     root: { type: String, required: true },
@@ -87,6 +91,7 @@ const MyComponent = defineComponent({
       pointRadii: new Float32Array(),
       redrawCounter: 0,
       isRGBA: false,
+      legendItems: [] as Array<{ label: string, color: string, value: any }>,
     }
   },
 
@@ -123,7 +128,8 @@ const MyComponent = defineComponent({
       
       if (this.hasGeometry) this.setMapCenter()
       this.isLoaded = true;
-      this.$nextTick(() => {
+      this.buildLegend();
+      this.$nextTick(() => { // trigger a map resize after load
         if (this.$refs.deckMap && this.$refs.deckMap.mymap) {
           this.$refs.deckMap.mymap.resize();
         }
@@ -253,6 +259,29 @@ const MyComponent = defineComponent({
       }
     },
 
+    buildLegend() {
+      // Manual legend definition from YAML config (vizDetails.legend)
+      const legend = this.vizDetails.legend
+      if (Array.isArray(legend)) {
+        this.legendItems = legend.map(entry => {
+          if (entry.subtitle) {
+            return { type: 'subtitle', label: entry.subtitle }
+          }
+          // Feature entry: label, color, size, shape
+          return {
+            type: entry.shape || 'line',
+            label: entry.label || '',
+            color: entry.color ? entry.color.replace('#', '').match(/.{1,2}/g).map(x => parseInt(x, 16)).join(',') : undefined,
+            size: entry.size,
+            value: entry.label || '',
+          }
+        })
+        return
+      }
+      // fallback: no legend
+      this.legendItems = []
+    },
+
     handleFeatureClick(feature: any) {
       console.log('Clicked feature:', feature?.properties)
     },
@@ -317,6 +346,19 @@ export default MyComponent
   flex: 1;
   width: 100%;
   height: 100%;
+}
+
+.legend-overlay {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  z-index: 10;
+  background: rgba(255,255,255,0.95);
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  padding: 0.5rem 1rem;
+  min-width: 120px;
+  max-width: 240px;
 }
 
 .loading {
