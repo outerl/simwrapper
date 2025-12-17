@@ -33,25 +33,6 @@
           @click="showChromeDirectory"
         ): b View local files...
 
-
-    //- DATA SOURCES ==================
-    h4.az-title Data sources
-    .az-grid
-      //- .az-cell &nbsp;
-      .az-cell.heading Resource
-      .az-cell.heading Description
-      .az-row(v-for="project in mainRoots" :key="project.slug")
-        //- .az-cell(style="padding-right: 0.5rem; font-size: 12px;"): i.fa.fa-network-wired
-        .az-cell.has-link
-          i.fa.fa-sitemap.az-icon(style="color: #99cc00")
-          a(@click="clickedOnFolder({root: project.slug})") {{ project.name}}
-        .az-cell {{ project.description}}
-    p
-      | Add more cloud data sources from the&nbsp;
-      a(@click="openDataStrip()"): b data sources
-      | &nbsp;tab on the left-side panel.
-
-
     //- EXAMPLE DASHBOARDS  ==================
     h4.az-title Example dashboards
     p.mb1 Explore these example dashboards to get a feeling for what SimWrapper can do:
