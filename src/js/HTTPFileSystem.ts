@@ -124,6 +124,9 @@ class HTTPFileSystem {
         return this._getFileFromLakeFS(scaryPath)
       case FileSystemType.FLASK:
         return this._getFileFromAzure(scaryPath)
+      case FileSystemType.S3:
+        // S3 buckets use standard HTTP GET for files
+        return this._getFileFetchResponse(scaryPath)
       case FileSystemType.FETCH:
       default:
         return this._getFileFetchResponse(scaryPath)
@@ -488,6 +491,12 @@ class HTTPFileSystem {
           .then(response => response.blob())
           .then(blob => blob.stream())
         return stream as any
+      case FileSystemType.S3:
+        // S3 buckets use standard HTTP GET for files
+        stream = await this._getFileFetchResponse(scaryPath, options).then(
+          response => response.body
+        )
+        return stream as any
       case FileSystemType.FETCH:
         stream = await this._getFileFetchResponse(scaryPath, options).then(
           response => response.body
@@ -648,43 +657,38 @@ class HTTPFileSystem {
     const dirs: string[] = []
     const files: string[] = []
     
-    const parser = new DOMParser()
-    const xmlDoc = parser.parseFromString(xmlText, 'text/xml')
+    // Use regex parsing instead of DOMParser to work in Web Workers
+    // DOMParser is not available in worker contexts
     
-    // Get files from <Contents> elements
-    const contents = xmlDoc.getElementsByTagName('Contents')
-    for (let i = 0; i < contents.length; i++) {
-      const keyElement = contents[i].getElementsByTagName('Key')[0]
-      if (keyElement && keyElement.textContent) {
-        let key = keyElement.textContent
-        // Remove the prefix to get the relative filename
-        if (key.startsWith(prefix)) {
-          key = key.substring(prefix.length)
-        }
-        // Skip if it's the directory itself or empty
-        if (key && key !== '' && !key.endsWith('/')) {
-          files.push(key)
-        }
+    // Get files from <Contents> elements - extract <Key>...</Key> content
+    const contentsRegex = /<Contents>[\s\S]*?<Key>(.*?)<\/Key>[\s\S]*?<\/Contents>/g
+    let match
+    while ((match = contentsRegex.exec(xmlText)) !== null) {
+      let key = match[1]
+      // Remove the prefix to get the relative filename
+      if (key.startsWith(prefix)) {
+        key = key.substring(prefix.length)
+      }
+      // Skip if it's the directory itself or empty
+      if (key && key !== '' && !key.endsWith('/')) {
+        files.push(key)
       }
     }
     
-    // Get directories from <CommonPrefixes> elements
-    const commonPrefixes = xmlDoc.getElementsByTagName('CommonPrefixes')
-    for (let i = 0; i < commonPrefixes.length; i++) {
-      const prefixElement = commonPrefixes[i].getElementsByTagName('Prefix')[0]
-      if (prefixElement && prefixElement.textContent) {
-        let dirPath = prefixElement.textContent
-        // Remove the base prefix to get the relative directory name
-        if (dirPath.startsWith(prefix)) {
-          dirPath = dirPath.substring(prefix.length)
-        }
-        // Remove trailing slash
-        if (dirPath.endsWith('/')) {
-          dirPath = dirPath.slice(0, -1)
-        }
-        if (dirPath && dirPath !== '') {
-          dirs.push(dirPath)
-        }
+    // Get directories from <CommonPrefixes> elements - extract <Prefix>...</Prefix> content
+    const prefixRegex = /<CommonPrefixes>[\s\S]*?<Prefix>(.*?)<\/Prefix>[\s\S]*?<\/CommonPrefixes>/g
+    while ((match = prefixRegex.exec(xmlText)) !== null) {
+      let dirPath = match[1]
+      // Remove the base prefix to get the relative directory name
+      if (dirPath.startsWith(prefix)) {
+        dirPath = dirPath.substring(prefix.length)
+      }
+      // Remove trailing slash
+      if (dirPath.endsWith('/')) {
+        dirPath = dirPath.slice(0, -1)
+      }
+      if (dirPath && dirPath !== '') {
+        dirs.push(dirPath)
       }
     }
     
