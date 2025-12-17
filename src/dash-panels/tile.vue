@@ -1,13 +1,13 @@
 <template lang="pug">
 .content
   .tiles-container(v-if="imagesAreLoaded")
-    .tile(v-for="(value, index) in this.dataSet.data" :style="[ { 'background-color': colors[index % colors.length] }, tileStyle ]")
+    .tile(v-for="(value, index) in this.dataSet.data" v-bind:style="{ 'background-color': colors[index % colors.length]}" @click="")
       a(:href="value[urlIndex]" target="_blank" :class="{ 'is-not-clickable': !value[urlIndex] }")
         p.tile-title {{ value[tileNameIndex] }}
         p.tile-value {{ value[tileValueIndex] }}
         .tile-image(v-if="value[tileImageIndex] != undefined && checkIfItIsACustomIcon(value[tileImageIndex])" :style="{'background': base64Images[index], 'background-size': 'contain'}")
         img.tile-image(v-else-if="value[tileImageIndex] != undefined && checkIfIconIsInAssetsFolder(value[tileImageIndex])" v-bind:src="getLocalImage(value[tileImageIndex].trim())" :style="{'background': ''}")
-        font-awesome-icon.tile-image(v-else-if="value[tileImageIndex] != undefined" :icon="value[tileImageIndex].trim()" size="1xl" :style="{'background': '', 'color': 'black'}")
+        font-awesome-icon.tile-image(v-else-if="value[tileImageIndex] != undefined" :icon="value[tileImageIndex].trim()" size="2xl" :style="{'background': '', 'color': 'black'}")
 </template>
 
 <script lang="ts">
@@ -116,15 +116,6 @@ export default defineComponent({
   computed: {
     fileApi(): HTTPFileSystem {
       return new HTTPFileSystem(this.fileSystemConfig, globalStore)
-    },
-    tileStyle(): any {
-      const h = (this as any).config?.height
-      if (h === undefined || h === null) return {}
-      if (typeof h === 'number') return { height: `${h}px` }
-      const s = String(h).trim()
-      if (s === '') return {}
-      // enforce exact height so tiles don't expand due to padding/content
-      return { height: s, minHeight: s, maxHeight: s }
     },
   },
   async mounted() {
@@ -271,8 +262,7 @@ export default defineComponent({
 .tiles-container {
   display: flex;
   width: 100%;
-  min-width: 250px;
-  height: auto;
+  flex-direction: row;
   justify-content: space-around;
   flex-wrap: wrap;
   position: relative;
@@ -284,12 +274,9 @@ export default defineComponent({
   grid-auto-flow: column;
   background-color: #845ec2;
   margin: 10px;
-  padding: 10px;
+  padding: 20px;
   min-width: 250px;
   font-family: $fancyFont;
-  overflow: hidden;
-  box-sizing: border-box;
-  grid-template-rows: auto 1fr;
 }
 
 .tile .tile-value {
@@ -301,59 +288,28 @@ export default defineComponent({
   grid-column-end: 4;
   text-align: center;
   grid-row: 2;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .tile .tile-title {
   width: 100%;
   font-size: 1.4rem;
+  height: 5rem;
   margin-bottom: 0;
   color: #363636; // var(--text) but always the color from the light mode.
   text-align: center;
   grid-column-start: 1;
   grid-column-end: 5;
   grid-row: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
 }
 
 .tile .tile-image {
-  height: 2.5rem;
-  max-height: 40%;
+  height: 4rem;
   grid-row: 2;
   align-items: baseline;
-  object-fit: contain;
-  margin-top: -24px;
-}
-
-.tile.has-fixed-height .tile-title {
-  /* allow title to take limited space when tile height is constrained */
-  -webkit-line-clamp: 1;
 }
 
 .is-not-clickable {
   cursor: default;
-}
-
-.tile > a {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: stretch;
-  height: 100%;
-  width: 100%;
-}
-
-.tile .tile-image > font-awesome-icon,
-.tile .tile-image > svg,
-.tile .tile-image > img {
-  height: 100%;
-  width: auto;
-  display: block;
 }
 
 @media only screen and (max-width: 640px) {
