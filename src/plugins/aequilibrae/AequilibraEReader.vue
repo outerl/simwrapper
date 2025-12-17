@@ -146,6 +146,9 @@ const MyComponent = defineComponent({
   methods: {
     async initBackgroundLayers() {
       try {
+        // Force the map style to dark-matter.json
+        if (!this.vizDetails) this.vizDetails = {};
+        this.vizDetails.mapStyle = 'map-styles/dark-matter.json';
         this.bgLayers = new BackgroundLayers({
           vizDetails: this.vizDetails,
           fileApi: this.aeqFileSystem,

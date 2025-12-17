@@ -134,9 +134,9 @@ let fileSystems: FileSystemConfig[] = [
   // ----------- End. Below here, these are editable: -------------------
 
   {
-    name: 'AequilibraE Example Data',
+    name: '"Chicago Regional" Example',
     slug: 'aequilibrae-example',
-    description: 'Example data from the AequilibraE plugin',
+    description: 'Example model using the AequilibraE plugin',
     thumbnail: 'images/thumb-localfiles.jpg',
     example: true,
     baseURL: 'https://aequilibrae-simwrapper-demo.s3.amazonaws.com/',

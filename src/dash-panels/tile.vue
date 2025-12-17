@@ -1,10 +1,14 @@
 <template lang="pug">
 .content
   .tiles-container(v-if="imagesAreLoaded")
-    .tile(v-for="(value, index) in this.dataSet.data" v-bind:style="{ 'background-color': colors[index % colors.length]}" @click="")
+    .tile(
+      v-for="(value, index) in this.dataSet.data"
+      :style="getTileStyle(index)"
+      @click=""
+    )
       a(:href="value[urlIndex]" target="_blank" :class="{ 'is-not-clickable': !value[urlIndex] }")
-        p.tile-title {{ value[tileNameIndex] }}
-        p.tile-value {{ value[tileValueIndex] }}
+        p.tile-title(:style="{ color: tileTextColor }") {{ value[tileNameIndex] }}
+        p.tile-value(:style="{ color: tileTextColor }") {{ value[tileValueIndex] }}
         .tile-image(v-if="value[tileImageIndex] != undefined && checkIfItIsACustomIcon(value[tileImageIndex])" :style="{'background': base64Images[index], 'background-size': 'contain'}")
         img.tile-image(v-else-if="value[tileImageIndex] != undefined && checkIfIconIsInAssetsFolder(value[tileImageIndex])" v-bind:src="getLocalImage(value[tileImageIndex].trim())" :style="{'background': ''}")
         font-awesome-icon.tile-image(v-else-if="value[tileImageIndex] != undefined" :icon="value[tileImageIndex].trim()" size="2xl" :style="{'background': '', 'color': 'black'}")
@@ -45,6 +49,10 @@ export default defineComponent({
       dataSet: {} as { data?: any; x?: any[]; y?: any[]; allRows?: any },
       YAMLrequirementsOverview: { dataset: '' },
       colors: [
+        '#dddddd00', // light gray
+        '#dddddd00', // light gray
+        '#dddddd00', // light gray
+        '#dddddd00', // light gray
         '#F08080', // Light coral pink
         '#FFB6C1', // Pale pink
         '#FFDAB9', // peach
@@ -116,6 +124,12 @@ export default defineComponent({
   computed: {
     fileApi(): HTTPFileSystem {
       return new HTTPFileSystem(this.fileSystemConfig, globalStore)
+    },
+    tileBorderColor(): string {
+      return this.globalState.isDarkMode ? '#fff' : '#000';
+    },
+    tileTextColor(): string {
+      return this.globalState.isDarkMode ? '#fff' : '#363636';
     },
   },
   async mounted() {
@@ -227,6 +241,14 @@ export default defineComponent({
       }
       return false
     },
+
+    getTileStyle(index: number) {
+      return {
+        'background-color': this.colors[index % this.colors.length],
+        'border': '1px solid ' + this.tileBorderColor,
+        'color': this.tileTextColor
+      }
+    },
   },
 })
 </script>
@@ -277,13 +299,13 @@ export default defineComponent({
   padding: 20px;
   min-width: 250px;
   font-family: $fancyFont;
+  border-color: v-bind(tileBorderColor);
 }
 
 .tile .tile-value {
   font-size: 2rem;
   font-weight: bold;
   width: 100%;
-  color: #363636; // var(--text) but always the color from the light mode.
   grid-column-start: 2;
   grid-column-end: 4;
   text-align: center;
@@ -295,7 +317,6 @@ export default defineComponent({
   font-size: 1.4rem;
   height: 5rem;
   margin-bottom: 0;
-  color: #363636; // var(--text) but always the color from the light mode.
   text-align: center;
   grid-column-start: 1;
   grid-column-end: 5;
