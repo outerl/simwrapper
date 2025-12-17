@@ -200,11 +200,23 @@ export function buildStyleArrays(args: BuildArgs): BuildResult {
       }
     }
 
-    // lineWidth - handle both static and column-based
+    // lineWidth - handle static, array, category, and column-based
     if (style.lineWidth) {
-      if (typeof style.lineWidth === 'number') {
+      if (Array.isArray(style.lineWidth)) {
+        // Assign each width in the array to the corresponding feature
+        for (let j = 0; j < idxs.length; j++) {
+          lineWidths[idxs[j]] = style.lineWidth[j] ?? defaultWidth
+        }
+      } else if (typeof style.lineWidth === 'number') {
         for (let j = 0; j < idxs.length; j++) {
           lineWidths[idxs[j]] = style.lineWidth
+        }
+      } else if (typeof style.lineWidth === 'object' && 'widths' in style.lineWidth && 'column' in style.lineWidth) {
+        // Category-based mapping: { column, widths }
+        const widthMap = style.lineWidth.widths || {}
+        for (let j = 0; j < idxs.length; j++) {
+          const v = propsArr[j]?.[style.lineWidth.column]
+          lineWidths[idxs[j]] = widthMap[v] ?? defaultWidth
         }
       } else if ('column' in style.lineWidth) {
         const values = propsArr.map(p => toNumber(p?.[style.lineWidth!.column]))
