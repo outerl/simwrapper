@@ -196,6 +196,9 @@ const MyComponent = defineComponent({
       // merge user-supplied layout with SimWrapper layout defaults
       if (this.vizDetails.layout) this.mergeLayouts()
 
+      // Apply top-level axis range settings (xMin/xMax/yMin/yMax) even without a layout property
+      this.applyAxisRangeSettings()
+
       if (this.vizDetails.fixedRatio) {
         this.vizDetails.layout.xaxis = Object.assign(this.vizDetails.layout.xaxis, {
           constrain: 'domain',
@@ -320,20 +323,56 @@ const MyComponent = defineComponent({
       delete mergedLayout.height
       delete mergedLayout.width
 
+      // Apply top-level xMin/xMax/yMin/yMax if provided
+      const { xMin, xMax, yMin, yMax } = this.vizDetails
+      const hasXRange = xMin !== undefined || xMax !== undefined
+      const hasYRange = yMin !== undefined || yMax !== undefined
+
       // be selective about these:
       if (mergedLayout.xaxis) {
         mergedLayout.xaxis.automargin = true
-        mergedLayout.xaxis.autorange = true
         mergedLayout.xaxis.animate = true
+        // Only set autorange if no range is specified (via xMin/xMax or layout.xaxis.range)
+        const xRangeFromLayout = mergedLayout.xaxis.range && mergedLayout.xaxis.range.length === 2
+        if (hasXRange) {
+          mergedLayout.xaxis.range = [
+            xMin !== undefined ? xMin : null,
+            xMax !== undefined ? xMax : null
+          ]
+          mergedLayout.xaxis.autorange = false
+        } else if (xRangeFromLayout) {
+          mergedLayout.xaxis.autorange = false
+        } else {
+          mergedLayout.xaxis.autorange = true
+        }
         if (!mergedLayout.xaxis.title) mergedLayout.xaxis.title = this.layout.xaxis.title
       } else {
-        mergedLayout.xaxis = this.layout.xaxis
+        mergedLayout.xaxis = { ...this.layout.xaxis }
+        if (hasXRange) {
+          mergedLayout.xaxis.range = [
+            xMin !== undefined ? xMin : null,
+            xMax !== undefined ? xMax : null
+          ]
+          mergedLayout.xaxis.autorange = false
+        }
       }
 
       if (mergedLayout.yaxis) {
         mergedLayout.yaxis.automargin = true
-        mergedLayout.yaxis.autorange = true
         mergedLayout.yaxis.animate = true
+        // Only set autorange if no range is specified (via yMin/yMax or layout.yaxis.range)
+        const yRangeFromLayout = mergedLayout.yaxis.range && mergedLayout.yaxis.range.length === 2
+        if (hasYRange) {
+          mergedLayout.yaxis.range = [
+            yMin !== undefined ? yMin : null,
+            yMax !== undefined ? yMax : null
+          ]
+          mergedLayout.yaxis.autorange = false
+        } else if (yRangeFromLayout) {
+          mergedLayout.yaxis.autorange = false
+        } else {
+          mergedLayout.yaxis.autorange = true
+        }
 
         // bug #357: scatterplots fail if rangemode is set
         if (!this.traces.find(a => a?.type == 'scatter')) {
@@ -341,7 +380,14 @@ const MyComponent = defineComponent({
         }
         if (!mergedLayout.yaxis.title) mergedLayout.yaxis.title = this.layout.yaxis.title
       } else {
-        mergedLayout.yaxis = this.layout.yaxis
+        mergedLayout.yaxis = { ...this.layout.yaxis }
+        if (hasYRange) {
+          mergedLayout.yaxis.range = [
+            yMin !== undefined ? yMin : null,
+            yMax !== undefined ? yMax : null
+          ]
+          mergedLayout.yaxis.autorange = false
+        }
       }
 
       if (mergedLayout.yaxis2) {
@@ -355,6 +401,32 @@ const MyComponent = defineComponent({
       }
 
       this.layout = mergedLayout
+    },
+
+    /**
+     * Apply top-level axis range settings (xMin, xMax, yMin, yMax) from vizDetails.
+     * This handles the case where user doesn't provide a layout property but still wants axis ranges.
+     */
+    applyAxisRangeSettings() {
+      const { xMin, xMax, yMin, yMax } = this.vizDetails
+      const hasXRange = xMin !== undefined || xMax !== undefined
+      const hasYRange = yMin !== undefined || yMax !== undefined
+
+      if (hasXRange) {
+        this.layout.xaxis.range = [
+          xMin !== undefined ? xMin : null,
+          xMax !== undefined ? xMax : null
+        ]
+        this.layout.xaxis.autorange = false
+      }
+
+      if (hasYRange) {
+        this.layout.yaxis.range = [
+          yMin !== undefined ? yMin : null,
+          yMax !== undefined ? yMax : null
+        ]
+        this.layout.yaxis.autorange = false
+      }
     },
 
     // This method checks if facet_col and/or facet_row are defined in the traces

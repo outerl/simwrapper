@@ -303,7 +303,7 @@ export default defineComponent({
 }
 
 .tile .tile-value {
-  font-size: 2rem;
+  font-size: 3rem;
   font-weight: bold;
   width: 100%;
   grid-column-start: 2;
@@ -314,8 +314,8 @@ export default defineComponent({
 
 .tile .tile-title {
   width: 100%;
-  font-size: 1.4rem;
-  height: 5rem;
+  font-size: 2.5rem;
+  // height: 3.5rem;
   margin-bottom: 0;
   text-align: center;
   grid-column-start: 1;

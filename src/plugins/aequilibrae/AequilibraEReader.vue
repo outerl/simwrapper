@@ -27,7 +27,7 @@
       :viewId="layerId"
       :lineWidthUnits="'meters'"
     )
-    .legend-overlay(v-if="legendItems.length")
+    .legend-overlay(v-if="legendItems.length" :style="{ background: legendBgColor }")
       LegendColors(:items="legendItems" title="Legend")
 
 </template>
@@ -102,6 +102,9 @@ const MyComponent = defineComponent({
       )
       if (!project) throw new Error(`Project '${this.root}' not found`)
       return project
+    },
+    legendBgColor(): string {
+      return this.globalState.isDarkMode ? 'rgba(32,32,32,0.95)' : 'rgba(255,255,255,0.95)';
     },
   },
 
@@ -356,7 +359,6 @@ export default MyComponent
   top: 1rem;
   right: 1rem;
   z-index: 10;
-  background: rgba(255,255,255,0.95);
   border-radius: 6px;
   box-shadow: 0 2px 8px rgba(0,0,0,0.08);
   padding: 0.5rem 1rem;
