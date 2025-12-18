@@ -26,6 +26,7 @@
       :screenshot="0"
       :viewId="layerId"
       :lineWidthUnits="'meters'"
+      :pointRadiusUnits="'meters'"
     )
     .legend-overlay(v-if="legendItems.length" :style="{ background: legendBgColor }")
       LegendColors(:items="legendItems" title="Legend")

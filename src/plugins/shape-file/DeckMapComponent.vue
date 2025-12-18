@@ -49,6 +49,7 @@ export default defineComponent({
     screenshot: { type: Number, required: true },
     viewId: { type: Number, required: true },
     lineWidthUnits: { type: String, required: false, default: 'pixels' },
+    pointRadiusUnits: { type: String, required: false, default: 'pixels' },
   },
 
   data() {
@@ -330,8 +331,8 @@ export default defineComponent({
             getOffset: OFFSET_DIRECTION.RIGHT,
             opacity: this.opacity,
             pickable: true,
-            pointRadiusUnits: 'pixels',
-            pointRadiusMinPixels: 2,
+            pointRadiusUnits: this.pointRadiusUnits,
+            pointRadiusMinPixels: 0,
             // pointRadiusMaxPixels: 50,
             stroked: this.isStroked,
             // useDevicePixels: this.isTakingScreenshot,
