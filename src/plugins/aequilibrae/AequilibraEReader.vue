@@ -79,7 +79,7 @@ const MyComponent = defineComponent({
       spl: null as any,
       db: null as any,
       extraDbs: new Map() as Map<string, any>,
-      tables: [] as Array<{name: string, type: string, rowCount: number, columns: any[]}>,
+      tables: [] as Array<{ name: string; type: string; rowCount: number; columns: any[] }>,
       isLoaded: false,
       geoJsonFeatures: [] as any[],
       hasGeometry: false,
@@ -92,7 +92,7 @@ const MyComponent = defineComponent({
       pointRadii: new Float32Array(),
       redrawCounter: 0,
       isRGBA: false,
-      legendItems: [] as Array<{ label: string, color: string, value: any }>,
+      legendItems: [] as Array<{ label: string; color: string; value: any }>,
     }
   },
 
@@ -105,13 +105,12 @@ const MyComponent = defineComponent({
       return project
     },
     legendBgColor(): string {
-      return this.globalState.isDarkMode ? 'rgba(32,32,32,0.95)' : 'rgba(255,255,255,0.95)';
+      return this.globalState.isDarkMode ? 'rgba(32,32,32,0.95)' : 'rgba(255,255,255,0.95)'
     },
   },
 
   watch: {
     resize() {
-      // Trigger redraw when panel is resized
       this.redrawCounter += 1
     },
   },
@@ -120,7 +119,7 @@ const MyComponent = defineComponent({
     try {
       this.aeqFileSystem = new AequilibraEFileSystem(this.fileSystem, globalStore)
       await this.initBackgroundLayers()
-      
+
       if (this.thumbnail) {
         this.$emit('isLoaded')
         return
@@ -129,18 +128,18 @@ const MyComponent = defineComponent({
       await this.getVizDetails()
       await this.loadDatabase()
       await this.extractGeometries()
-      
+
       if (this.hasGeometry) this.setMapCenter()
-      this.isLoaded = true;
-      this.buildLegend();
-      this.$nextTick(() => { // trigger a map resize after load
+      this.isLoaded = true
+      this.buildLegend()
+      this.$nextTick(() => {
+        // trigger a map resize after load
         if (this.$refs.deckMap && this.$refs.deckMap.mymap) {
-          this.$refs.deckMap.mymap.resize();
+          this.$refs.deckMap.mymap.resize()
         }
-      });
+      })
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
-      console.error('❌ AequilibraE Error:', message)
       this.loadingText = `Error: ${message}`
     } finally {
       this.$emit('isLoaded')
@@ -150,7 +149,7 @@ const MyComponent = defineComponent({
   methods: {
     async initBackgroundLayers() {
       try {
-        if (!this.vizDetails) this.vizDetails = {};
+        if (!this.vizDetails) this.vizDetails = {}
         this.bgLayers = new BackgroundLayers({
           vizDetails: this.vizDetails,
           fileApi: this.aeqFileSystem,
@@ -197,31 +196,24 @@ const MyComponent = defineComponent({
 
     async extractGeometries() {
       if (!this.hasGeometry) {
-        console.warn('⚠️ No geometry columns found')
         return
       }
 
       this.loadingText = 'Extracting geometries...'
-      const features = await buildGeoFeatures(this.db, this.tables, this.layerConfigs, this.extraDbs)
-      
-      console.log('📊 Total features from buildGeoFeatures:', features.length)
-      console.log('First feature:', features[0])
-      
+      const features = await buildGeoFeatures(
+        this.db,
+        this.tables,
+        this.layerConfigs,
+        this.extraDbs
+      )
+
       // Don't filter - just use all features
       this.geoJsonFeatures = features
-      
-      console.log('📊 Features after filtering:', this.geoJsonFeatures.length)
 
       const styles = buildStyleArrays({
         features: this.geoJsonFeatures,
         layers: this.layerConfigs,
         defaults: this.vizDetails.defaults,
-      })
-
-      console.log('🎨 Styling arrays:', {
-        fillColors: styles.fillColors.length,
-        lineColors: styles.lineColors.length,
-        geoJsonFeaturesCount: this.geoJsonFeatures.length,
       })
 
       Object.assign(this, {
@@ -234,15 +226,13 @@ const MyComponent = defineComponent({
         isRGBA: true,
         redrawCounter: this.redrawCounter + 1,
       })
-      
-      console.log('✅ Extraction complete, bgLayers:', this.bgLayers)
     },
 
     async getVizDetails() {
       if (this.config) {
         this.vizDetails = { ...this.config }
         this.vizDetails.database = this.resolvePath(this.config.database || this.config.file)
-        
+
         if (this.config.extraDatabases) {
           this.vizDetails.extraDatabases = Object.fromEntries(
             Object.entries(this.config.extraDatabases).map(([name, path]) => [
@@ -251,7 +241,7 @@ const MyComponent = defineComponent({
             ])
           )
         }
-        
+
         this.layerConfigs = this.config.layers || {}
       } else if (this.yamlConfig) {
         const yamlBlob = await this.aeqFileSystem.getFileBlob(this.resolvePath(this.yamlConfig))
@@ -276,7 +266,13 @@ const MyComponent = defineComponent({
           return {
             type: entry.shape || 'line',
             label: entry.label || '',
-            color: entry.color ? entry.color.replace('#', '').match(/.{1,2}/g).map(x => parseInt(x, 16)).join(',') : undefined,
+            color: entry.color
+              ? entry.color
+                  .replace('#', '')
+                  .match(/.{1,2}/g)
+                  .map(x => parseInt(x, 16))
+                  .join(',')
+              : undefined,
             size: entry.size,
             value: entry.label || '',
           }
@@ -310,7 +306,7 @@ const MyComponent = defineComponent({
 
     setMapCenter() {
       let { center, zoom = 9, bearing = 0, pitch = 0 } = this.vizDetails
-      
+
       if (typeof center === 'string') {
         center = center.split(',').map((c: string) => parseFloat(c.trim())) as [number, number]
       }
@@ -325,7 +321,7 @@ const MyComponent = defineComponent({
         })
       }
     },
-  }
+  },
 })
 
 export default MyComponent
@@ -359,7 +355,7 @@ export default MyComponent
   right: 1rem;
   z-index: 10;
   border-radius: 6px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   padding: 0.5rem 1rem;
   min-width: 120px;
   max-width: 240px;

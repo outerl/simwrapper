@@ -1,4 +1,4 @@
-export type GeometryType = 'polygon' | 'line' | 'point';
+export type GeometryType = 'polygon' | 'line' | 'point'
 
 /**
  * Configuration for joining data from an external database table
@@ -7,45 +7,45 @@ export type GeometryType = 'polygon' | 'line' | 'point';
  */
 export interface JoinConfig {
   /** Key referencing an entry in extraDatabases */
-  database: string;
+  database: string
   /** Table name in the external database to join from */
-  table: string;
+  table: string
   /** Column name in the main layer table to join on */
-  leftKey: string;
+  leftKey: string
   /** Column name in the external table to join on */
-  rightKey: string;
+  rightKey: string
   /** Join type: 'left' keeps all main records, 'inner' only keeps matches. Default: 'left' */
-  type?: 'left' | 'inner';
+  type?: 'left' | 'inner'
   /** Optional: specific columns to include from the joined table (default: all) */
-  columns?: string[];
+  columns?: string[]
 }
 
 export interface LayerConfig {
-  table: string;
-  type: GeometryType;
+  table: string
+  type: GeometryType
   /** Optional join configuration to merge external data into this layer */
-  join?: JoinConfig;
-  fillColor?: string;
-  strokeColor?: string;
-  strokeWidth?: number;
-  radius?: number;
-  opacity?: number;
-  zIndex?: number;
+  join?: JoinConfig
+  fillColor?: string
+  strokeColor?: string
+  strokeWidth?: number
+  radius?: number
+  opacity?: number
+  zIndex?: number
 }
 
 export interface VizDetails {
-  title: string;
-  description: string;
-  database: string;
+  title: string
+  description: string
+  database: string
   /** Additional databases available for joining. Keys are reference names, values are file paths */
-  extraDatabases?: Record<string, string>;
-  view: 'table' | 'map' | '';
-  layers: { [key: string]: LayerConfig };
-  center?: [number, number];
-  zoom?: number;
-  projection?: string;
-  bearing?: number;
-  pitch?: number;
+  extraDatabases?: Record<string, string>
+  view: 'table' | 'map' | ''
+  layers: { [key: string]: LayerConfig }
+  center?: [number, number]
+  zoom?: number
+  projection?: string
+  bearing?: number
+  pitch?: number
 }
 
 // Color and styling types

@@ -8,18 +8,22 @@ const hexToRgb = (hex: string): RGB => {
 
 const hexToRgba = (hex: string, alpha: number = 1): RGBA => {
   const match = hex.replace('#', '').match(/.{1,2}/g) || ['80', '80', '80']
-  return [parseInt(match[0], 16), parseInt(match[1], 16), parseInt(match[2], 16), Math.round(alpha * 255)]
+  return [
+    parseInt(match[0], 16),
+    parseInt(match[1], 16),
+    parseInt(match[2], 16),
+    Math.round(alpha * 255),
+  ]
 }
-
 
 const getPaletteColors = (name: string, numColors: number): string[] => {
   const palette = (cartoColors as any)[name || 'YlGn']
   if (!palette) return Array(numColors).fill('#808080')
   const sizes = Object.keys(palette)
     .map(Number)
-    .filter((n) => n > 0)
+    .filter(n => n > 0)
     .sort((a, b) => a - b)
-  const size = sizes.find((s) => s >= numColors) || sizes[sizes.length - 1]
+  const size = sizes.find(s => s >= numColors) || sizes[sizes.length - 1]
   return palette[size] || Array(numColors).fill('#808080')
 }
 
@@ -28,7 +32,11 @@ const toNumber = (value: any): number | null => {
   return isNaN(num) ? null : num
 }
 
-const buildColorEncoder = (values: any[], style: ColorStyle, dataRange: [number, number] | null = null) => {
+const buildColorEncoder = (
+  values: any[],
+  style: ColorStyle,
+  dataRange: [number, number] | null = null
+) => {
   if (dataRange) {
     // clamp the values to within the data range
     values = values.map(v => {
@@ -39,16 +47,17 @@ const buildColorEncoder = (values: any[], style: ColorStyle, dataRange: [number,
   }
 
   const nums = values.map(toNumber).filter((v): v is number => v !== null)
-  const [min, max] = 'range' in style && style.range
-    ? style.range
-    : [nums.length ? Math.min(...nums) : 0, nums.length ? Math.max(...nums) : 1]
-  
+  const [min, max] =
+    'range' in style && style.range
+      ? style.range
+      : [nums.length ? Math.min(...nums) : 0, nums.length ? Math.max(...nums) : 1]
+
   const paletteName = 'palette' in style ? style.palette : 'YlGn'
   const numColors = 'numColors' in style ? style.numColors : 7
   const colors = getPaletteColors(paletteName, numColors).map(h => hexToRgba(h, 1))
-  
+
   const scale = max === min ? 0 : (numColors - 1) / (max - min)
-  
+
   return (value: any) => {
     const num = toNumber(value) ?? min
     const idx = Math.round((num - min) * scale)
@@ -62,7 +71,7 @@ const buildCategoryEncoder = (colors: Record<string, string>, defaultColor: stri
     colorMap.set(String(key), hexToRgb(hex))
   }
   const defaultRgba = hexToRgb(defaultColor)
-  
+
   return (value: any) => {
     return colorMap.get(String(value)) || defaultRgba
   }
@@ -80,11 +89,14 @@ const applyQuantitativeMapping = (
   const [dataMin, dataMax] = dataRange
   const [outMin, outMax] = outputRange
   const scale = dataMax === dataMin ? 0 : 1 / (dataMax - dataMin)
-  
+
   for (let i = 0; i < values.length; i++) {
     const num = values[i]
     const normalized = num === null ? 0 : (num - dataMin) * scale
-    target[i * stride + offset] = Math.max(outMin, Math.min(outMax, normalized * (outMax - outMin) + outMin))
+    target[i * stride + offset] = Math.max(
+      outMin,
+      Math.min(outMax, normalized * (outMax - outMin) + outMin)
+    )
   }
 }
 
@@ -93,7 +105,7 @@ export function buildStyleArrays(args: BuildArgs): BuildResult {
 
   const N = features.length
   const fillColors = new Uint8ClampedArray(N * 4)
-  const lineColors = new Uint8ClampedArray(N * 3)  // RGB only
+  const lineColors = new Uint8ClampedArray(N * 3) // RGB only
   const lineWidths = new Float32Array(N)
   const pointRadii = new Float32Array(N)
   const fillHeights = new Float32Array(N)
@@ -106,7 +118,11 @@ export function buildStyleArrays(args: BuildArgs): BuildResult {
   for (let i = 0; i < N; i++) {
     const props = features[i]?.properties || {}
     const layerName = props._layer || 'GLOBAL'
-    const bucket = buckets.get(layerName) || { idxs: [], props: [], style: layers[layerName]?.style }
+    const bucket = buckets.get(layerName) || {
+      idxs: [],
+      props: [],
+      style: layers[layerName]?.style,
+    }
     bucket.idxs.push(i)
     bucket.props.push(props)
     bucket.style = layers[layerName]?.style || bucket.style
@@ -123,7 +139,7 @@ export function buildStyleArrays(args: BuildArgs): BuildResult {
   // Initialize everything to defaults first
   for (let i = 0; i < N; i++) {
     fillColors.set(defaultFill, i * 4)
-    lineColors.set(defaultLine, i * 3)  // RGB offset
+    lineColors.set(defaultLine, i * 3) // RGB offset
     lineWidths[i] = defaultWidth
     pointRadii[i] = defaultRadius
     fillHeights[i] = defaultHeight
@@ -167,7 +183,11 @@ export function buildStyleArrays(args: BuildArgs): BuildResult {
         }
       } else if ('column' in style.fillColor) {
         // Column-based encoding
-        const encoder = buildColorEncoder(propsArr.map(p => p?.[style.fillColor!.column]), style.fillColor, style.fillColor.dataRange)
+        const encoder = buildColorEncoder(
+          propsArr.map(p => p?.[style.fillColor!.column]),
+          style.fillColor,
+          style.fillColor.dataRange
+        )
         for (let j = 0; j < idxs.length; j++) {
           fillColors.set(encoder(propsArr[j]?.[style.fillColor.column]), idxs[j] * 4)
         }
@@ -190,7 +210,11 @@ export function buildStyleArrays(args: BuildArgs): BuildResult {
         }
       } else if ('column' in style.lineColor) {
         // Column-based encoding
-        const encoder = buildColorEncoder(propsArr.map(p => p?.[style.lineColor!.column]), style.lineColor, style.lineColor.dataRange)
+        const encoder = buildColorEncoder(
+          propsArr.map(p => p?.[style.lineColor!.column]),
+          style.lineColor,
+          style.lineColor.dataRange
+        )
         for (let j = 0; j < idxs.length; j++) {
           const [r, g, b] = encoder(propsArr[j]?.[style.lineColor.column])
           lineColors[idxs[j] * 3] = r
@@ -211,7 +235,11 @@ export function buildStyleArrays(args: BuildArgs): BuildResult {
         for (let j = 0; j < idxs.length; j++) {
           lineWidths[idxs[j]] = style.lineWidth
         }
-      } else if (typeof style.lineWidth === 'object' && 'widths' in style.lineWidth && 'column' in style.lineWidth) {
+      } else if (
+        typeof style.lineWidth === 'object' &&
+        'widths' in style.lineWidth &&
+        'column' in style.lineWidth
+      ) {
         // Category-based mapping: { column, widths }
         const widthMap = style.lineWidth.widths || {}
         for (let j = 0; j < idxs.length; j++) {
@@ -220,7 +248,14 @@ export function buildStyleArrays(args: BuildArgs): BuildResult {
         }
       } else if ('column' in style.lineWidth) {
         const values = propsArr.map(p => toNumber(p?.[style.lineWidth!.column]))
-        applyQuantitativeMapping(values, style.lineWidth.dataRange ?? [1, 6], style.lineWidth.widthRange ?? [1, 6], lineWidths, 1, 0)
+        applyQuantitativeMapping(
+          values,
+          style.lineWidth.dataRange ?? [1, 6],
+          style.lineWidth.widthRange ?? [1, 6],
+          lineWidths,
+          1,
+          0
+        )
       }
     }
 
@@ -232,7 +267,14 @@ export function buildStyleArrays(args: BuildArgs): BuildResult {
         }
       } else if ('column' in style.pointRadius) {
         const values = propsArr.map(p => toNumber(p?.[style.pointRadius!.column]))
-        applyQuantitativeMapping(values, style.pointRadius.dataRange ?? [2, 12], style.pointRadius.widthRange ?? [2, 12], pointRadii, 1, 0)
+        applyQuantitativeMapping(
+          values,
+          style.pointRadius.dataRange ?? [2, 12],
+          style.pointRadius.widthRange ?? [2, 12],
+          pointRadii,
+          1,
+          0
+        )
       }
     }
 
@@ -244,7 +286,14 @@ export function buildStyleArrays(args: BuildArgs): BuildResult {
         }
       } else if ('column' in style.fillHeight) {
         const values = propsArr.map(p => toNumber(p?.[style.fillHeight!.column]))
-        applyQuantitativeMapping(values, style.fillHeight.dataRange ?? [0, 100], style.fillHeight.widthRange ?? [0, 100], fillHeights, 1, 0)
+        applyQuantitativeMapping(
+          values,
+          style.fillHeight.dataRange ?? [0, 100],
+          style.fillHeight.widthRange ?? [0, 100],
+          fillHeights,
+          1,
+          0
+        )
       }
     }
   }
