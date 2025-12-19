@@ -280,8 +280,9 @@ export async function buildTables(
 /**
  * Load join data from an extra database and return as a lookup map.
  * Memory optimized: only queries the columns that are actually needed.
+ * Supports filtering: applies WHERE clause if specified in joinConfig.filter.
  * @param extraDb - The extra database connection
- * @param joinConfig - Join configuration specifying table, keys, and columns
+ * @param joinConfig - Join configuration specifying table, keys, columns, and optional filter
  * @param neededColumn - Optional: the specific column needed for styling (further reduces memory)
  */
 export async function loadJoinData(
@@ -310,8 +311,8 @@ export async function loadJoinData(
     columnsToQuery = undefined as any
   }
 
-  // Query the join table with only needed columns
-  const joinRows = await queryTable(extraDb, joinConfig.table, columnsToQuery)
+  // Query the join table with only needed columns and optional filter
+  const joinRows = await queryTable(extraDb, joinConfig.table, columnsToQuery, joinConfig.filter)
 
   for (const row of joinRows) {
     const key = row[joinConfig.rightKey]

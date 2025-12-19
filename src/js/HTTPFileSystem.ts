@@ -1,5 +1,6 @@
 import micromatch from 'micromatch'
 import naturalSort from 'javascript-natural-sort'
+import { SaxEventType, SAXParser } from 'sax-wasm'
 
 import { gUnzip } from '@/js/util'
 
@@ -650,45 +651,76 @@ class HTTPFileSystem {
     }
     
     const xmlText = await response.text()
-    return this.buildListFromS3Xml(xmlText, prefix)
+    return await this.buildListFromS3Xml(xmlText, prefix)
   }
 
-  private buildListFromS3Xml(xmlText: string, prefix: string): DirectoryEntry {
+  private async buildListFromS3Xml(xmlText: string, prefix: string): Promise<DirectoryEntry> {
     const dirs: string[] = []
     const files: string[] = []
     
-    // Use regex parsing instead of DOMParser to work in Web Workers
-    // DOMParser is not available in worker contexts
-    
-    // Get files from <Contents> elements - extract <Key>...</Key> content
-    const contentsRegex = /<Contents>[\s\S]*?<Key>(.*?)<\/Key>[\s\S]*?<\/Contents>/g
-    let match
-    while ((match = contentsRegex.exec(xmlText)) !== null) {
-      let key = match[1]
-      // Remove the prefix to get the relative filename
-      if (key.startsWith(prefix)) {
-        key = key.substring(prefix.length)
+    try {
+      const parser = new SAXParser(SaxEventType.OpenTag | SaxEventType.Text | SaxEventType.CloseTag, { highWaterMark: 32 * 1024 })
+      await parser.prepareWasm()
+      
+      let path = '', inKey = false, inPrefix = false
+      
+      parser.eventHandler = (event, data) => {
+        const tag = data.name
+        if (event === SaxEventType.OpenTag) {
+          if (tag === 'Key') inKey = true
+          else if (tag === 'Prefix') inPrefix = true
+        } else if (event === SaxEventType.Text && (inKey || inPrefix)) {
+          path += data.value
+        } else if (event === SaxEventType.CloseTag) {
+          if (tag === 'Key') {
+            inKey = false
+            if (path && path.startsWith(prefix)) {
+              const key = path.substring(prefix.length)
+              if (key && !key.endsWith('/')) files.push(key)
+            }
+            path = ''
+          } else if (tag === 'Prefix') {
+            inPrefix = false
+            if (path && path.startsWith(prefix)) {
+              const dir = path.substring(prefix.length).replace(/\/$/, '')
+              if (dir) dirs.push(dir)
+            }
+            path = ''
+          }
+        }
       }
-      // Skip if it's the directory itself or empty
-      if (key && key !== '' && !key.endsWith('/')) {
-        files.push(key)
+      
+      parser.write(new TextEncoder().encode(xmlText))
+      parser.end()
+      
+    } catch (error) {
+      console.warn('SAX parsing failed, falling back to regex:', error)
+      
+      // Fallback to regex parsing if sax-wasm fails
+      const contentsRegex = /<Contents>[\s\S]*?<Key>(.*?)<\/Key>[\s\S]*?<\/Contents>/g
+      let match
+      while ((match = contentsRegex.exec(xmlText)) !== null) {
+        let key = match[1]
+        if (key.startsWith(prefix)) {
+          key = key.substring(prefix.length)
+        }
+        if (key && key !== '' && !key.endsWith('/')) {
+          files.push(key)
+        }
       }
-    }
-    
-    // Get directories from <CommonPrefixes> elements - extract <Prefix>...</Prefix> content
-    const prefixRegex = /<CommonPrefixes>[\s\S]*?<Prefix>(.*?)<\/Prefix>[\s\S]*?<\/CommonPrefixes>/g
-    while ((match = prefixRegex.exec(xmlText)) !== null) {
-      let dirPath = match[1]
-      // Remove the base prefix to get the relative directory name
-      if (dirPath.startsWith(prefix)) {
-        dirPath = dirPath.substring(prefix.length)
-      }
-      // Remove trailing slash
-      if (dirPath.endsWith('/')) {
-        dirPath = dirPath.slice(0, -1)
-      }
-      if (dirPath && dirPath !== '') {
-        dirs.push(dirPath)
+      
+      const prefixRegex = /<CommonPrefixes>[\s\S]*?<Prefix>(.*?)<\/Prefix>[\s\S]*?<\/CommonPrefixes>/g
+      while ((match = prefixRegex.exec(xmlText)) !== null) {
+        let dirPath = match[1]
+        if (dirPath.startsWith(prefix)) {
+          dirPath = dirPath.substring(prefix.length)
+        }
+        if (dirPath.endsWith('/')) {
+          dirPath = dirPath.slice(0, -1)
+        }
+        if (dirPath && dirPath !== '') {
+          dirs.push(dirPath)
+        }
       }
     }
     

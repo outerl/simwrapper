@@ -59,15 +59,18 @@ export async function getRowCount(db: any, tableName: string): Promise<number> {
  * @param db - SQLite database connection object
  * @param tableName - Name of the table to query
  * @param columns - Optional array of column names to select (default: all columns)
+ * @param whereClause - Optional WHERE clause to filter results (without the WHERE keyword)
  * @returns Promise<Record<string, any>[]> Array of row objects
  */
 export async function queryTable(
   db: any,
   tableName: string,
-  columns?: string[]
+  columns?: string[],
+  whereClause?: string
 ): Promise<Record<string, any>[]> {
   const columnList = columns ? columns.map(c => `"${c}"`).join(', ') : '*'
-  const query = `SELECT ${columnList} FROM "${tableName}";`
+  const whereCondition = whereClause ? ` WHERE ${whereClause}` : ''
+  const query = `SELECT ${columnList} FROM "${tableName}"${whereCondition};`
   const result = await db.exec(query).get.objs
   return result
 }

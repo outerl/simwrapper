@@ -29,7 +29,8 @@ export type GeometryType = 'polygon' | 'line' | 'point'
  *   leftKey: 'link_id', 
  *   rightKey: 'link_id',
  *   type: 'left',
- *   columns: ['volume', 'v_over_c']
+ *   columns: ['volume', 'v_over_c'],
+ *   filter: 'volume > 100 AND v_over_c < 0.9'
  * }
  * ```
  */
@@ -46,6 +47,8 @@ export interface JoinConfig {
   type?: 'left' | 'inner'
   /** Optional: specific columns to include from the joined table (default: all) */
   columns?: string[]
+  /** Optional: SQL WHERE clause to filter rows in the joined table (e.g., 'volume > 100') */
+  filter?: string
 }
 
 /**
