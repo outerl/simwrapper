@@ -34,20 +34,33 @@
 </template>
 
 <script lang="ts">
+import { defineComponent, markRaw } from 'vue'
 import { i18n } from './i18n'
 
-import { defineComponent } from 'vue'
-
+// Core imports
 import globalStore from '@/store'
-import AequilibraEFileSystem from '@/plugins/aequilibrae/AequilibraEFileSystem'
+import { FileSystemConfig } from '@/Globals'
+
+// Plugin-specific imports
+import AequilibraEFileSystem from './AequilibraEFileSystem'
+import {
+  initSql,
+  openDb,
+  releaseSql,
+  releaseDb,
+  acquireLoadingSlot,
+  parseYamlConfig,
+  buildTables,
+  buildGeoFeatures,
+  getTotalMapsLoading,
+  mapLoadingComplete
+} from './useAequilibrae'
+import { buildStyleArrays } from './styling'
+
+// Vue components
 import DeckMapComponent from '@/plugins/shape-file/DeckMapComponent.vue'
 import LegendColors from '@/components/LegendColors.vue'
 import BackgroundLayers from '@/js/BackgroundLayers'
-
-import { FileSystemConfig } from '@/Globals'
-
-import { initSql, openDb, parseYamlConfig, buildTables, buildGeoFeatures } from './useAequilibrae'
-import { buildStyleArrays } from './styling'
 import type { LayerConfig, VizDetails } from './types'
 
 const MyComponent = defineComponent({
@@ -78,7 +91,7 @@ const MyComponent = defineComponent({
       aeqFileSystem: null as any,
       spl: null as any,
       db: null as any,
-      extraDbs: new Map() as Map<string, any>,
+      dbPath: '' as string,  // Track database path for cache management
       tables: [] as Array<{ name: string; type: string; rowCount: number; columns: any[] }>,
       isLoaded: false,
       geoJsonFeatures: [] as any[],
@@ -115,7 +128,14 @@ const MyComponent = defineComponent({
     },
   },
 
+  beforeUnmount() {
+    this.cleanupMemory()
+    mapLoadingComplete()
+  },
+
   async mounted() {
+    let releaseLoadingSlot: (() => void) | null = null
+    
     try {
       this.aeqFileSystem = new AequilibraEFileSystem(this.fileSystem, globalStore)
       await this.initBackgroundLayers()
@@ -124,17 +144,30 @@ const MyComponent = defineComponent({
         this.$emit('isLoaded')
         return
       }
-
+      
+      // CRITICAL: Acquire loading slot to serialize map loading
+      // This ensures only one map loads at a time, preventing memory exhaustion
+      this.loadingText = 'Waiting for other maps to load...'
+      releaseLoadingSlot = await acquireLoadingSlot()
+      
       await this.getVizDetails()
       await this.loadDatabase()
       await this.extractGeometries()
-
+      
+      // Release the loading slot BEFORE rendering
+      // This allows the next map to start loading while we render
+      if (releaseLoadingSlot) {
+        releaseLoadingSlot()
+        releaseLoadingSlot = null
+      }
+      
       if (this.hasGeometry) this.setMapCenter()
       this.isLoaded = true
       this.buildLegend()
+      
+      // Trigger map resize after load
       this.$nextTick(() => {
-        // trigger a map resize after load
-        if (this.$refs.deckMap && this.$refs.deckMap.mymap) {
+        if (this.$refs.deckMap?.mymap) {
           this.$refs.deckMap.mymap.resize()
         }
       })
@@ -142,22 +175,28 @@ const MyComponent = defineComponent({
       const message = err instanceof Error ? err.message : String(err)
       this.loadingText = `Error: ${message}`
     } finally {
+      // Always release the slot if we still hold it
+      if (releaseLoadingSlot) {
+        releaseLoadingSlot()
+      }
       this.$emit('isLoaded')
     }
   },
 
   methods: {
-    async initBackgroundLayers() {
+    async initBackgroundLayers(): Promise<void> {
       try {
-        if (!this.vizDetails) this.vizDetails = {}
+        if (!this.vizDetails) this.vizDetails = {} as VizDetails
+        
         this.bgLayers = new BackgroundLayers({
           vizDetails: this.vizDetails,
           fileApi: this.aeqFileSystem,
           subfolder: this.subfolder,
         })
+        
         await this.bgLayers.initialLoad()
-      } catch (e) {
-        console.warn('Background layers failed to load:', e)
+      } catch (error) {
+        console.warn('Background layers failed to load:', error)
       }
     },
 
@@ -166,56 +205,133 @@ const MyComponent = defineComponent({
       return filePath.startsWith('/') ? filePath : `${this.subfolder}/${filePath}`
     },
 
-    async loadDatabase() {
-      this.loadingText = 'Loading SQL engine...'
-      this.spl = await initSql()
+    async loadDatabase(): Promise<void> {
+      try {
+        this.loadingText = 'Loading SQL engine...'
+        this.spl = await initSql()
 
-      this.loadingText = 'Loading database...'
-      const blob = await this.aeqFileSystem.getFileBlob(this.vizDetails.database)
-      const arrayBuffer = await blob.arrayBuffer()
-      this.db = await openDb(this.spl, arrayBuffer)
-
-      if (this.vizDetails.extraDatabases) {
-        this.loadingText = 'Loading extra databases...'
-        for (const [name, path] of Object.entries(this.vizDetails.extraDatabases)) {
-          try {
-            const blob = await this.aeqFileSystem.getFileBlob(path as string)
-            const arrayBuffer = await blob.arrayBuffer()
-            this.extraDbs.set(name, await openDb(this.spl, arrayBuffer))
-          } catch (e) {
-            console.warn(`Failed to load extra database '${name}':`, e)
-          }
+        this.loadingText = 'Loading database...'
+        this.dbPath = this.vizDetails.database
+        
+        if (!this.dbPath) {
+          throw new Error('No database path specified in configuration')
         }
-      }
 
-      this.loadingText = 'Reading tables...'
-      const { tables, hasGeometry } = await buildTables(this.db, this.layerConfigs)
-      this.tables = tables
-      this.hasGeometry = hasGeometry
+        const blob = await this.aeqFileSystem.getFileBlob(this.dbPath)
+        const arrayBuffer = await blob.arrayBuffer()
+        
+        // Pass path to enable database caching across multiple maps
+        this.db = await openDb(this.spl, arrayBuffer, this.dbPath)
+
+        this.loadingText = 'Reading tables...'
+        const { tables, hasGeometry } = await buildTables(this.db, this.layerConfigs)
+        this.tables = tables
+        this.hasGeometry = hasGeometry
+      } catch (error) {
+        throw new Error(`Failed to load database: ${error instanceof Error ? error.message : String(error)}`)
+      }
     },
 
-    async extractGeometries() {
+    async extractGeometries(): Promise<void> {
       if (!this.hasGeometry) {
         return
       }
 
-      this.loadingText = 'Extracting geometries...'
-      const features = await buildGeoFeatures(
-        this.db,
-        this.tables,
-        this.layerConfigs,
-        this.extraDbs
-      )
+      try {
+        this.loadingText = 'Extracting geometries...'
+        
+        // Auto-scale memory limits based on concurrent map loading
+        const totalMaps = getTotalMapsLoading()
+        const { autoLimit, autoPrecision } = this.getMemoryLimits(totalMaps)
+        
+        console.log(`🗺️ Loading map (${totalMaps} total maps) - limit: ${autoLimit}, precision: ${autoPrecision}`)
+        
+        // Memory optimization options - YAML values override auto-scaling
+        const memoryOptions = {
+          limit: this.vizDetails.geometryLimit ?? autoLimit,
+          coordinatePrecision: this.vizDetails.coordinatePrecision ?? autoPrecision,
+          minimalProperties: this.vizDetails.minimalProperties !== false,
+        }
+      
+        // Create a lazy loader for extra databases
+        const extraDbPaths = this.vizDetails.extraDatabases || {}
+        const lazyDbLoader = this.createLazyDbLoader(extraDbPaths)
+        
+        const features = await buildGeoFeatures(
+          this.db,
+          this.tables,
+          this.layerConfigs,
+          lazyDbLoader,
+          memoryOptions
+        )
 
-      // Don't filter - just use all features
-      this.geoJsonFeatures = features
+        // Release main database after feature extraction
+        this.releaseMainDatabase()
+        
+        // Give GC a chance to run before building styles
+        await new Promise(resolve => setTimeout(resolve, 10))
 
-      const styles = buildStyleArrays({
-        features: this.geoJsonFeatures,
-        layers: this.layerConfigs,
-        defaults: this.vizDetails.defaults,
-      })
+        // Use markRaw to prevent Vue reactivity on large datasets
+        this.geoJsonFeatures = markRaw(features)
+        
+        const styles = buildStyleArrays({
+          features: this.geoJsonFeatures,
+          layers: this.layerConfigs,
+          defaults: this.vizDetails.defaults,
+        })
 
+        this.applyStyles(styles)
+      } catch (error) {
+        throw new Error(`Failed to extract geometries: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    },
+    
+    /**
+     * Calculate memory limits based on the number of concurrent maps loading
+     */
+    getMemoryLimits(totalMaps: number): { autoLimit: number; autoPrecision: number } {
+      let autoLimit = 100000  // Base: 100k features
+      let autoPrecision = 5   // Base: ~1m accuracy
+      
+      if (totalMaps >= 8) {
+        autoLimit = 25000      // 8+ maps: 25k features each
+        autoPrecision = 4      // ~10m accuracy
+      } else if (totalMaps >= 5) {
+        autoLimit = 40000      // 5-7 maps: 40k features each
+        autoPrecision = 4      // ~10m accuracy
+      } else if (totalMaps >= 3) {
+        autoLimit = 60000      // 3-4 maps: 60k features each
+        autoPrecision = 5      // ~1m accuracy
+      }
+      
+      return { autoLimit, autoPrecision }
+    },
+
+    /**
+     * Create a lazy database loader for extra databases
+     */
+    createLazyDbLoader(extraDbPaths: Record<string, string>) {
+      return async (dbName: string) => {
+        const path = extraDbPaths[dbName]
+        if (!path) return null
+        
+        try {
+          this.loadingText = `Loading ${dbName} database...`
+          const blob = await this.aeqFileSystem.getFileBlob(path)
+          const arrayBuffer = await blob.arrayBuffer()
+          // Don't cache extra databases - they're used once and discarded
+          return await openDb(this.spl, arrayBuffer)
+        } catch (error) {
+          console.warn(`Failed to load extra database '${dbName}':`, error)
+          return null
+        }
+      }
+    },
+
+    /**
+     * Apply styling arrays to the component
+     */
+    applyStyles(styles: ReturnType<typeof buildStyleArrays>): void {
       Object.assign(this, {
         fillColors: styles.fillColors,
         lineColors: styles.lineColors,
@@ -227,8 +343,38 @@ const MyComponent = defineComponent({
         redrawCounter: this.redrawCounter + 1,
       })
     },
+    
+    releaseMainDatabase(): void {
+      if (this.dbPath) {
+        releaseDb(this.dbPath)
+        this.dbPath = ''
+      }
+      this.db = null
+      this.tables = []
+    },
+    
+    cleanupMemory(): void {
+      // Release main database through cache system
+      this.releaseMainDatabase()
+      
+      // Release SPL engine reference (shared engine stays alive for other maps)
+      releaseSql()
+      this.spl = null
+      
+      // Clear large arrays
+      this.geoJsonFeatures = []
+      this.tables = []
+      
+      // Clear typed arrays
+      this.fillColors = new Uint8ClampedArray()
+      this.lineColors = new Uint8ClampedArray()
+      this.lineWidths = new Float32Array()
+      this.pointRadii = new Float32Array()
+      this.fillHeights = new Float32Array()
+      this.featureFilter = new Float32Array()
+    },
 
-    async getVizDetails() {
+    async getVizDetails(): Promise<void> {
       if (this.config) {
         this.vizDetails = { ...this.config }
         this.vizDetails.database = this.resolvePath(this.config.database || this.config.file)
@@ -254,36 +400,39 @@ const MyComponent = defineComponent({
       }
     },
 
-    buildLegend() {
-      // Manual legend definition from YAML config (vizDetails.legend)
+    buildLegend(): void {
       const legend = this.vizDetails.legend
+      
       if (Array.isArray(legend)) {
         this.legendItems = legend.map(entry => {
           if (entry.subtitle) {
             return { type: 'subtitle', label: entry.subtitle }
           }
-          // Feature entry: label, color, size, shape
+          
           return {
             type: entry.shape || 'line',
             label: entry.label || '',
-            color: entry.color
-              ? entry.color
-                  .replace('#', '')
-                  .match(/.{1,2}/g)
-                  .map(x => parseInt(x, 16))
-                  .join(',')
-              : undefined,
+            color: this.convertColorForLegend(entry.color),
             size: entry.size,
             value: entry.label || '',
           }
         })
-        return
+      } else {
+        this.legendItems = []
       }
-      // fallback: no legend
-      this.legendItems = []
     },
 
-    handleFeatureClick(feature: any) {
+    convertColorForLegend(color?: string): string | undefined {
+      if (!color) return undefined
+      
+      return color
+        .replace('#', '')
+        .match(/.{1,2}/g)?.
+        map(x => parseInt(x, 16))
+        .join(',')
+    },
+
+    handleFeatureClick(feature: any): void {
       console.log('Clicked feature:', feature?.properties)
     },
 
@@ -304,7 +453,7 @@ const MyComponent = defineComponent({
       return lines.join('<br/>')
     },
 
-    setMapCenter() {
+    setMapCenter(): void {
       let { center, zoom = 9, bearing = 0, pitch = 0 } = this.vizDetails
 
       if (typeof center === 'string') {

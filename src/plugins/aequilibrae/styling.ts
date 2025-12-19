@@ -1,11 +1,35 @@
+/**
+ * Styling utilities for AequilibraE plugin
+ * 
+ * This module provides functions for building visual styles from data.
+ * It handles color encoding, size mapping, filtering, and the creation
+ * of typed arrays optimized for WebGL rendering.
+ * 
+ * @fileoverview Data-Driven Styling System for AequilibraE
+ * @author SimWrapper Development Team
+ */
+
 import * as cartoColors from 'cartocolor'
 import { RGBA, RGB, ColorStyle, NumericStyle, LayerStyle, BuildArgs, BuildResult } from './types'
 
+/**
+ * Converts a hex color string to RGB array
+ * 
+ * @param hex - Hex color string (with or without #)
+ * @returns RGB array [R, G, B] with values 0-255
+ */
 const hexToRgb = (hex: string): RGB => {
   const match = hex.replace('#', '').match(/.{1,2}/g) || ['80', '80', '80']
   return [parseInt(match[0], 16), parseInt(match[1], 16), parseInt(match[2], 16)]
 }
 
+/**
+ * Converts a hex color string to RGBA array
+ * 
+ * @param hex - Hex color string (with or without #)
+ * @param alpha - Alpha value (0-1), default 1 (opaque)
+ * @returns RGBA array [R, G, B, A] with values 0-255
+ */
 const hexToRgba = (hex: string, alpha: number = 1): RGBA => {
   const match = hex.replace('#', '').match(/.{1,2}/g) || ['80', '80', '80']
   return [
@@ -16,6 +40,13 @@ const hexToRgba = (hex: string, alpha: number = 1): RGBA => {
   ]
 }
 
+/**
+ * Gets color palette from CartoColor library
+ * 
+ * @param name - Name of the color palette (e.g., 'YlGn', 'Viridis')
+ * @param numColors - Number of colors needed
+ * @returns Array of hex color strings
+ */
 const getPaletteColors = (name: string, numColors: number): string[] => {
   const palette = (cartoColors as any)[name || 'YlGn']
   if (!palette) return Array(numColors).fill('#808080')
@@ -27,9 +58,45 @@ const getPaletteColors = (name: string, numColors: number): string[] => {
   return palette[size] || Array(numColors).fill('#808080')
 }
 
+/**
+ * Safely converts a value to number, returning null for invalid values
+ * 
+ * @param value - Value to convert to number
+ * @returns Number or null if conversion fails
+ */
 const toNumber = (value: any): number | null => {
   const num = Number(value)
   return isNaN(num) ? null : num
+}
+
+/**
+ * Safe minimum function that avoids stack overflow on large arrays
+ * 
+ * @param arr - Array of numbers
+ * @returns Minimum value, or 0 if array is empty
+ */
+const safeMin = (arr: number[]): number => {
+  if (arr.length === 0) return 0
+  let min = arr[0]
+  for (let i = 1; i < arr.length; i++) {
+    if (arr[i] < min) min = arr[i]
+  }
+  return min
+}
+
+/**
+ * Safe maximum function that avoids stack overflow on large arrays
+ * 
+ * @param arr - Array of numbers
+ * @returns Maximum value, or 1 if array is empty
+ */
+const safeMax = (arr: number[]): number => {
+  if (arr.length === 0) return 1
+  let max = arr[0]
+  for (let i = 1; i < arr.length; i++) {
+    if (arr[i] > max) max = arr[i]
+  }
+  return max
 }
 
 const buildColorEncoder = (
@@ -50,7 +117,7 @@ const buildColorEncoder = (
   const [min, max] =
     'range' in style && style.range
       ? style.range
-      : [nums.length ? Math.min(...nums) : 0, nums.length ? Math.max(...nums) : 1]
+      : [safeMin(nums), safeMax(nums)]
 
   const paletteName = 'palette' in style ? style.palette : 'YlGn'
   const numColors = 'numColors' in style ? style.numColors : 7
@@ -100,6 +167,16 @@ const applyQuantitativeMapping = (
   }
 }
 
+/**
+ * Builds typed arrays for efficient WebGL rendering from feature data and styling rules
+ * 
+ * This is the main function that converts GeoJSON features and layer styling
+ * configurations into the typed arrays needed for high-performance map rendering.
+ * It handles color encoding, size mapping, filtering, and optimization for GPU rendering.
+ * 
+ * @param args - Build arguments containing features, layer configs, and defaults
+ * @returns BuildResult with typed arrays ready for WebGL rendering
+ */
 export function buildStyleArrays(args: BuildArgs): BuildResult {
   const { features, layers, defaults = {} } = args
 
