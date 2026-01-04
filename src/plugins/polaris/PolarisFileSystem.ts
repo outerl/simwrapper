@@ -71,11 +71,7 @@ export default class PolarisFileSystem extends HTTPFileSystem {
    * @returns Promise<ArrayBuffer | null> - Database as ArrayBuffer, or null if failed
    */
   public async loadPolarisDatabase(filepath: string): Promise<ArrayBuffer | null> {
-    try {
-      const blob = await this.getFileBlob(filepath)
-      return blob ? await blob.arrayBuffer() : null
-    } catch (error) {
-      return null
-    }
+    const blob = await this.getFileBlob(filepath)
+    return blob ? await blob.arrayBuffer() : null
   }
 }

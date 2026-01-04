@@ -13,7 +13,7 @@ import { i18n } from './i18n'
 import globalStore from '@/store'
 import { FileSystemConfig } from '@/Globals'
 import PolarisFileSystem from './PolarisFileSystem'
-import { initSql, openDb, releaseSql, releaseDb, acquireLoadingSlot, parsePolarisYaml, buildVizDetails, buildTables, buildGeoFeatures, getTotalMapsLoading, mapLoadingComplete, autoDetectDatabases } from './usePolaris'
+import { initSql, openDb, releaseSql, releaseDb, acquireLoadingSlot, parsePolarisYaml, buildVizDetails, buildTables, buildGeoFeatures, getTotalMapsLoading, mapLoadingComplete, autoDetectDatabases, attachDatabase } from './usePolaris'
 import { buildStyleArrays } from './styling'
 import DeckMapComponent from '@/plugins/shape-file/DeckMapComponent.vue'
 import LegendColors from '@/components/LegendColors.vue'
@@ -81,24 +81,45 @@ const MyComponent = defineComponent({
         this.loadingText = 'Loading SQL engine...'
         this.spl = await initSql()
 
-        this.loadingText = 'Loading database...'
+        this.loadingText = 'Loading supply database...'
         this.dbPath = this.vizDetails.supplyDatabase || ''
         
         if (!this.dbPath) {
           throw new Error('No supply database path found')
         }
 
-        const blob = await this.polarisFileSystem.getFileBlob(this.dbPath)
-        const arrayBuffer = await blob.arrayBuffer()
+        const blob = await this.polarisFileSystem.loadPolarisDatabase(this.dbPath)
+        if (!blob) throw new Error(`Failed to load supply database: ${this.dbPath}`)
         
-        this.db = await openDb(this.spl, arrayBuffer, this.dbPath)
+        this.db = await openDb(this.spl, blob, this.dbPath)
+
+        // Attach optional databases
+        if (this.vizDetails.demandDatabase) {
+          this.loadingText = 'Attaching demand database...'
+          const demandBlob = await this.polarisFileSystem.loadPolarisDatabase(this.vizDetails.demandDatabase)
+          if (demandBlob) {
+            await attachDatabase(this.db, this.spl, demandBlob, 'demand')
+          }
+        }
+
+        if (this.vizDetails.resultDatabase) {
+          this.loadingText = 'Attaching result database...'
+          const resultBlob = await this.polarisFileSystem.loadPolarisDatabase(this.vizDetails.resultDatabase)
+          if (resultBlob) {
+            await attachDatabase(this.db, this.spl, resultBlob, 'result')
+          }
+        }
 
         this.loadingText = 'Reading tables...'
         const { tables, hasGeometry } = await buildTables(this.db, this.layerConfigs)
         this.tables = tables
         this.hasGeometry = hasGeometry
       } catch (error) {
-        throw new Error(`Failed to load database: ${error instanceof Error ? error.message : String(error)}`)
+        // Ensure detailed error is shown
+        const msg = error instanceof Error ? error.message : String(error)
+        this.loadingText = `Error loading database: ${msg}`
+        console.error(error)
+        throw error // Propagate to mounted handler
       }
     },
 

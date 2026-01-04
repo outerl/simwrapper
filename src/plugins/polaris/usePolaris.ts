@@ -21,49 +21,65 @@ import type { VizDetails, LayerConfig, PolarisSimwrapperConfig, PolarisScenarioC
 import { getTableNames, getTableSchema, getRowCount, fetchGeoJSONFeatures } from './db'
 
 // ============================================================================
-// GLOBAL LOADING QUEUE - Ensures only one map loads at a time
+// GLOBAL LOADING MANAGER - Ensures only one map loads at a time
 // ============================================================================
-let loadingQueue: Promise<void> = Promise.resolve()
-let queueLength = 0
-let totalMapsLoading = 0
+class LoadingManager {
+  private queue: Promise<void> = Promise.resolve()
+  private queueLength = 0
+  private totalMapsLoading = 0
+
+  public async acquireSlot(): Promise<() => void> {
+    this.queueLength++
+    this.totalMapsLoading++
+    console.log(`🔒 Queued for loading (position: ${this.queueLength}, total: ${this.totalMapsLoading})`)
+
+    let releaseSlot: () => void
+
+    const myTurn = this.queue.then(() => {
+      console.log(`🔓 Acquired loading slot`)
+    })
+
+    this.queue = new Promise<void>(resolve => {
+      releaseSlot = () => {
+        this.queueLength--
+        console.log(`✅ Released loading slot (remaining in queue: ${this.queueLength})`)
+        resolve()
+      }
+    })
+
+    return myTurn.then(() => releaseSlot!)
+  }
+
+  public complete(): void {
+    this.totalMapsLoading = Math.max(0, this.totalMapsLoading - 1)
+  }
+
+  public get count(): number {
+    return this.totalMapsLoading
+  }
+}
+
+export const loadingManager = new LoadingManager()
 
 /**
  * Acquire a slot in the loading queue. Only one map can load at a time.
  */
 export function acquireLoadingSlot(): Promise<() => void> {
-  queueLength++
-  totalMapsLoading++
-  console.log(`🔒 Queued for loading (position: ${queueLength}, total: ${totalMapsLoading})`)
-  
-  let releaseSlot: () => void
-  
-  const myTurn = loadingQueue.then(() => {
-    console.log(`🔓 Acquired loading slot`)
-  })
-  
-  loadingQueue = new Promise<void>(resolve => {
-    releaseSlot = () => {
-      queueLength--
-      console.log(`✅ Released loading slot (remaining in queue: ${queueLength})`)
-      resolve()
-    }
-  })
-  
-  return myTurn.then(() => releaseSlot!)
+  return loadingManager.acquireSlot()
 }
 
 /**
  * Call when a map has fully finished loading
  */
 export function mapLoadingComplete(): void {
-  totalMapsLoading = Math.max(0, totalMapsLoading - 1)
+  loadingManager.complete()
 }
 
 /**
  * Get the current total number of maps being loaded.
  */
 export function getTotalMapsLoading(): number {
-  return totalMapsLoading
+  return loadingManager.count
 }
 
 // ============================================================================
@@ -78,22 +94,22 @@ let splRefCount = 0
  */
 export async function initSql(): Promise<any> {
   splRefCount++
-  
+
   if (sharedSpl) {
     return sharedSpl
   }
-  
+
   if (splInitPromise) {
     return splInitPromise
   }
-  
+
   splInitPromise = SPL().then((spl: any) => {
     sharedSpl = spl
     splInitPromise = null
     console.log('✅ Shared SPL engine initialized')
     return spl
   })
-  
+
   return splInitPromise
 }
 
@@ -123,14 +139,14 @@ export async function openDb(spl: any, arrayBuffer: ArrayBuffer, path?: string):
   if (!path) {
     return spl.db(arrayBuffer)
   }
-  
+
   const cached = dbCache.get(path)
   if (cached) {
     cached.refCount++
     console.log(`📦 Reusing cached database: ${path} (refs: ${cached.refCount})`)
     return cached.db
   }
-  
+
   const loadingPromise = dbLoadPromises.get(path)
   if (loadingPromise) {
     const db = await loadingPromise
@@ -141,7 +157,7 @@ export async function openDb(spl: any, arrayBuffer: ArrayBuffer, path?: string):
     }
     return db
   }
-  
+
   const loadPromise = (async () => {
     const db = await spl.db(arrayBuffer)
     dbCache.set(path, { db, refCount: 1, path })
@@ -149,7 +165,7 @@ export async function openDb(spl: any, arrayBuffer: ArrayBuffer, path?: string):
     console.log(`📂 Loaded and cached database: ${path}`)
     return db
   })()
-  
+
   dbLoadPromises.set(path, loadPromise)
   return loadPromise
 }
@@ -160,7 +176,7 @@ export async function openDb(spl: any, arrayBuffer: ArrayBuffer, path?: string):
 export function releaseDb(path: string): void {
   const cached = dbCache.get(path)
   if (!cached) return
-  
+
   cached.refCount--
   console.log(`📉 Database refCount decreased: ${path} (refs: ${cached.refCount})`)
   if (cached.refCount <= 0) {
@@ -191,12 +207,26 @@ export async function attachDatabase(
   arrayBuffer: ArrayBuffer,
   schemaName: string
 ): Promise<void> {
-  // Create a temporary database file in memory for the attached DB
-  const tempDb = await spl.db(arrayBuffer)
-  
-  // SPL.js doesn't support ATTACH directly, so we need to work around this
-  // by loading each database separately and querying them independently
-  console.log(`📎 Prepared database for attachment as '${schemaName}'`)
+  const filename = `${schemaName}.db`
+  try {
+    // Write buffer to virtual file system so SQLite can see it
+    // SPL.js (based on various Emscripten builds) usually exposes FS or a helper
+    if (typeof spl.createFile === 'function') {
+      await spl.createFile(filename, new Uint8Array(arrayBuffer))
+    } else if (spl.FS) {
+      // Standard Emscripten FS
+      const data = new Uint8Array(arrayBuffer)
+      spl.FS.createDataFile('/', filename, data, true, true, true)
+    } else {
+      console.warn('SPL engine FS not found, attempting ATTACH without file creation (likely to fail if not memory DB)')
+    }
+
+    await db.exec(`ATTACH DATABASE '${filename}' AS ${schemaName}`)
+    console.log(`📎 Attached database '${filename}' as '${schemaName}'`)
+  } catch (e) {
+    console.error(`Failed to attach database ${schemaName}:`, e)
+    throw e
+  }
 }
 
 /**
@@ -207,7 +237,7 @@ export async function parsePolarisYaml(
   subfolder: string | null
 ): Promise<{ simwrapper: PolarisSimwrapperConfig; scenario?: PolarisScenarioConfig }> {
   const config = YAML.parse(yamlText)
-  
+
   return {
     simwrapper: config.simwrapper || {},
     scenario: config.scenario || config
@@ -239,7 +269,7 @@ export function buildVizDetails(
 ): VizDetails {
   // Flatten layer configurations from grouped format to flat format
   const flatLayers: { [key: string]: LayerConfig } = {}
-  
+
   if (simwrapperConfig.layers) {
     for (const [groupName, groupLayers] of Object.entries(simwrapperConfig.layers)) {
       for (const [tableName, layerConfig] of Object.entries(groupLayers)) {
@@ -325,18 +355,18 @@ export async function buildGeoFeatures(
   const layersToProcess = Object.keys(plain).length
     ? Object.entries(plain)
     : tables
-        .filter(t => t.columns.some((c: any) => c.name.toLowerCase() === 'geometry'))
-        .map(t => [t.name, { table: t.name, type: 'line' as const }])
+      .filter(t => t.columns.some((c: any) => c.name.toLowerCase() === 'geometry'))
+      .map(t => [t.name, { table: t.name, type: 'line' as const }])
 
   const features: any[] = []
-  
+
   for (const [layerName, cfg] of layersToProcess as any) {
     const layerConfig = cfg as LayerConfig
     const tableName = layerConfig.table || layerName
     const table = tables.find(t => t.name === tableName)
     if (!table) continue
     if (!table.columns.some((c: any) => c.name.toLowerCase() === 'geometry')) continue
-    
+
     const layerFeatures = await fetchGeoJSONFeatures(
       db,
       table,
@@ -344,14 +374,14 @@ export async function buildGeoFeatures(
       cfg,
       options
     )
-    
+
     for (let i = 0; i < layerFeatures.length; i++) {
       features.push(layerFeatures[i])
     }
-    
+
     await new Promise(resolve => setTimeout(resolve, 50))
   }
-  
+
   return features
 }
 
@@ -362,7 +392,7 @@ export async function autoDetectDatabases(
   files: string[]
 ): Promise<{ supply?: string; demand?: string; result?: string }> {
   const result: { supply?: string; demand?: string; result?: string } = {}
-  
+
   for (const file of files) {
     const lower = file.toLowerCase()
     if (lower.includes('supply') && (lower.endsWith('.sqlite') || lower.endsWith('.db'))) {
@@ -373,6 +403,6 @@ export async function autoDetectDatabases(
       result.result = file
     }
   }
-  
+
   return result
 }
