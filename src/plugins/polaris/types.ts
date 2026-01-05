@@ -20,9 +20,9 @@ export type GeometryType = 'polygon' | 'line' | 'point'
  */
 export interface LayerConfig {
   /** Database table name containing the spatial data */
-  table: string
+  table?: string
   /** Type of geometry (affects rendering style) */
-  type: GeometryType
+  type?: GeometryType
   /** SQL filter clause (without WHERE keyword) */
   sqlFilter?: string
   /** Fill color for polygons (hex string) */
@@ -178,35 +178,58 @@ export type RGBA = [number, number, number, number]
 export type RGB = [number, number, number]
 
 /**
- * Configuration for data-driven color styling
- * Supports both quantitative (continuous) and categorical (discrete) color mappings
+ * Quantitative (numeric) color mapping.
+ *
+ * Note: runtime supports both `palette` (preferred) and legacy `colorScheme`.
+ * It also supports `range` or legacy `min`/`max`.
  */
-export type ColorStyle = {
+export type QuantitativeColorStyle = {
   /** Column name in the data to use for color encoding */
   column: string
-  /** Type of color mapping to apply */
-  type: 'quantitative' | 'categorical'
-  /** Color scheme name (e.g., 'Viridis', 'Blues') */
+  /** Optional discriminator for configs authored in YAML */
+  type?: 'quantitative'
+  /** Preferred palette name (CartoColor), e.g. 'Viridis', 'YlGn' */
+  palette?: string
+  /** Legacy synonym for palette */
   colorScheme?: string
-  /** Custom color range [startColor, endColor] for quantitative mapping */
-  colorRange?: [string, string]
-  /** Minimum value for color scale (auto-detected if not specified) */
+  /** Number of colors from the palette (default handled in styling) */
+  numColors?: number
+  /** Data domain [min, max] for scaling */
+  range?: [number, number]
+  /** Legacy synonyms for data domain */
   min?: number
-  /** Maximum value for color scale (auto-detected if not specified) */
   max?: number
+  /** Optional clamp range applied before encoding */
+  dataRange?: [number, number]
 }
 
 /**
- * Configuration for data-driven numeric styling (widths, radii, heights)
+ * Categorical (discrete) color mapping.
+ * Requires an explicit value->color dictionary.
  */
-export type NumericStyle = {
-  /** Column name in the data to use for numeric encoding */
+export type CategoricalColorStyle = {
   column: string
-  /** Data value range [min, max] (auto-detected if not specified) */
+  type?: 'categorical'
+  colors: Record<string, string>
+}
+
+/** Data-driven color styling configuration */
+export type ColorStyle = QuantitativeColorStyle | CategoricalColorStyle
+
+/** Quantitative (numeric) mapping for widths/radii/heights */
+export type QuantitativeNumericStyle = {
+  column: string
   dataRange?: [number, number]
-  /** Output range for visual property [min, max] */
   widthRange?: [number, number]
 }
+
+/** Categorical mapping for numeric widths (e.g. road class -> width) */
+export type CategoricalNumericStyle = {
+  column: string
+  widths: Record<string, number>
+}
+
+export type NumericStyle = QuantitativeNumericStyle | CategoricalNumericStyle
 
 /**
  * Complete styling configuration for a layer
@@ -214,15 +237,15 @@ export type NumericStyle = {
  */
 export type LayerStyle = {
   /** Fill color configuration for polygons */
-  fillColor?: ColorStyle
+  fillColor?: string | ColorStyle
   /** Line color configuration for lines and polygon outlines */
-  lineColor?: ColorStyle
+  lineColor?: string | ColorStyle
   /** Line width configuration */
-  lineWidth?: NumericStyle
+  lineWidth?: number | number[] | NumericStyle
   /** Point radius configuration */
-  pointRadius?: NumericStyle
+  pointRadius?: number | QuantitativeNumericStyle
   /** Fill height configuration for 3D visualization */
-  fillHeight?: NumericStyle
+  fillHeight?: number | QuantitativeNumericStyle
   /** Feature filtering configuration */
   filter?: { 
     column: string

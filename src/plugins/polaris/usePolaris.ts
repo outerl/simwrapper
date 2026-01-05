@@ -159,11 +159,15 @@ export async function openDb(spl: any, arrayBuffer: ArrayBuffer, path?: string):
   }
 
   const loadPromise = (async () => {
-    const db = await spl.db(arrayBuffer)
-    dbCache.set(path, { db, refCount: 1, path })
-    dbLoadPromises.delete(path)
-    console.log(`📂 Loaded and cached database: ${path}`)
-    return db
+    try {
+      const db = await spl.db(arrayBuffer)
+      dbCache.set(path, { db, refCount: 1, path })
+      console.log(`📂 Loaded and cached database: ${path}`)
+      return db
+    } finally {
+      // Always clear, even if SPL fails (prevents a permanently stuck rejected promise)
+      dbLoadPromises.delete(path)
+    }
   })()
 
   dbLoadPromises.set(path, loadPromise)

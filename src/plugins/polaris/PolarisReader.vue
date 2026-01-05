@@ -46,11 +46,13 @@ const MyComponent = defineComponent({
     let releaseSlot: (() => void) | null = null
     try {
       this.polarisFileSystem = new PolarisFileSystem(this.fileSystem, globalStore)
-      await this.initBackgroundLayers()
       if (this.thumbnail) { this.$emit('isLoaded'); return }
       this.loadingText = 'Waiting for other maps to load...'
       releaseSlot = await acquireLoadingSlot()
-      await this.getVizDetails(); await this.loadDatabase(); await this.extractGeometries()
+      await this.getVizDetails()
+      await this.initBackgroundLayers()
+      await this.loadDatabase()
+      await this.extractGeometries()
       if (releaseSlot) { releaseSlot(); releaseSlot = null }
       if (this.hasGeometry) this.setMapCenter()
       this.isLoaded = true; this.buildLegend()
@@ -211,11 +213,19 @@ const MyComponent = defineComponent({
     },
 
     async loadPolarisConfig(): Promise<void> {
-      // Look for polaris.yaml in the subfolder
+      // Look for polaris.yaml (or polaris.yml) in the subfolder
       const polarisYamlPath = `${this.subfolder}/polaris.yaml`
+      const polarisYmlPath = `${this.subfolder}/polaris.yml`
       
       try {
-        const yamlBlob = await this.polarisFileSystem.getFileBlob(polarisYamlPath)
+        const yamlBlob =
+          (await this.polarisFileSystem.getFileBlob(polarisYamlPath)) ||
+          (await this.polarisFileSystem.getFileBlob(polarisYmlPath))
+
+        if (!yamlBlob) {
+          throw new Error(`No polaris.yaml/polaris.yml found in ${this.subfolder}`)
+        }
+
         const yamlText = await yamlBlob.text()
         const { simwrapper, scenario } = await parsePolarisYaml(yamlText, this.subfolder)
         
@@ -270,8 +280,14 @@ const MyComponent = defineComponent({
       }
     },
 
-    convertColorForLegend(color?: string): string | undefined {
-      return color?.replace('#', '').match(/.{1,2}/g)?.map(x => parseInt(x, 16)).join(',')
+    convertColorForLegend(color?: string): string {
+      const parts = color?.replace('#', '').match(/.{1,2}/g)
+      if (!parts || parts.length < 3) return '128,128,128'
+      const nums = parts.slice(0, 3).map(x => {
+        const n = parseInt(x, 16)
+        return Number.isFinite(n) ? n : 128
+      })
+      return nums.join(',')
     },
     handleFeatureClick(feature: any): void { console.log('Clicked feature:', feature?.properties) },
     handleTooltip(hoverInfo: any): string {

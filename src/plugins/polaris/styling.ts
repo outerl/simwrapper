@@ -1,16 +1,24 @@
 /**
- * Styling utilities for AequilibraE plugin
+ * Styling utilities for POLARIS plugin
  * 
- * This module provides functions for building visual styles from data.
+ * This module provides functions for building visual styles from feature data.
  * It handles color encoding, size mapping, filtering, and the creation
  * of typed arrays optimized for WebGL rendering.
  * 
- * @fileoverview Data-Driven Styling System for AequilibraE
- * @author SimWrapper Development Team
+ * @fileoverview Data-Driven Styling System for POLARIS
  */
 
 import * as cartoColors from 'cartocolor'
-import { RGBA, RGB, ColorStyle, NumericStyle, LayerStyle, BuildArgs, BuildResult } from './types'
+import type {
+  RGBA,
+  RGB,
+  ColorStyle,
+  QuantitativeColorStyle,
+  NumericStyle,
+  LayerStyle,
+  BuildArgs,
+  BuildResult,
+} from './types'
 
 /**
  * Converts a hex color string to RGB array
@@ -101,7 +109,7 @@ const safeMax = (arr: number[]): number => {
 
 const buildColorEncoder = (
   values: any[],
-  style: ColorStyle,
+  style: QuantitativeColorStyle,
   dataRange: [number, number] | null = null
 ) => {
   if (dataRange) {
@@ -114,12 +122,20 @@ const buildColorEncoder = (
   }
 
   const nums = values.map(toNumber).filter((v): v is number => v !== null)
-  const [min, max] =
-    'range' in style && style.range
-      ? style.range
+
+  const hasLegacyMinMax =
+    typeof style.min === 'number' &&
+    Number.isFinite(style.min) &&
+    typeof style.max === 'number' &&
+    Number.isFinite(style.max)
+
+  const [min, max] = style.range
+    ? style.range
+    : hasLegacyMinMax
+      ? [style.min!, style.max!]
       : [safeMin(nums), safeMax(nums)]
 
-  const paletteName = 'palette' in style ? style.palette : 'YlGn'
+  const paletteName = style.palette || style.colorScheme || 'YlGn'
   const numColors = 'numColors' in style ? style.numColors : 7
   const colors = getPaletteColors(paletteName, numColors).map(h => hexToRgba(h, 1))
 
@@ -132,14 +148,26 @@ const buildColorEncoder = (
   }
 }
 
-const buildCategoryEncoder = (colors: Record<string, string>, defaultColor: string = '#808080') => {
-  const colorMap = new Map<string, RGBA>()
+const buildCategoryEncoderRgb = (colors: Record<string, string>, defaultColor: string = '#808080') => {
+  const colorMap = new Map<string, RGB>()
   for (const [key, hex] of Object.entries(colors)) {
     colorMap.set(String(key), hexToRgb(hex))
   }
-  const defaultRgba = hexToRgb(defaultColor)
+  const defaultRgb = hexToRgb(defaultColor)
 
-  return (value: any) => {
+  return (value: any): RGB => {
+    return colorMap.get(String(value)) || defaultRgb
+  }
+}
+
+const buildCategoryEncoderRgba = (colors: Record<string, string>, defaultColor: string = '#808080') => {
+  const colorMap = new Map<string, RGBA>()
+  for (const [key, hex] of Object.entries(colors)) {
+    colorMap.set(String(key), hexToRgba(hex, 1))
+  }
+  const defaultRgba = hexToRgba(defaultColor, 1)
+
+  return (value: any): RGBA => {
     return colorMap.get(String(value)) || defaultRgba
   }
 }
@@ -149,18 +177,20 @@ const applyQuantitativeMapping = (
   dataRange: [number, number],
   outputRange: [number, number],
   target: Float32Array,
+  idxs: number[],
   stride: number,
   offset: number
 ) => {
-  const nums = values.filter((v): v is number => v !== null)
   const [dataMin, dataMax] = dataRange
   const [outMin, outMax] = outputRange
   const scale = dataMax === dataMin ? 0 : 1 / (dataMax - dataMin)
 
-  for (let i = 0; i < values.length; i++) {
-    const num = values[i]
+  for (let j = 0; j < values.length; j++) {
+    const targetIndex = idxs[j]
+    if (targetIndex === undefined) continue
+    const num = values[j]
     const normalized = num === null ? 0 : (num - dataMin) * scale
-    target[i * stride + offset] = Math.max(
+    target[targetIndex * stride + offset] = Math.max(
       outMin,
       Math.min(outMax, normalized * (outMax - outMin) + outMin)
     )
@@ -254,16 +284,22 @@ export function buildStyleArrays(args: BuildArgs): BuildResult {
           fillColors.set(color, idxs[j] * 4)
         }
       } else if ('colors' in style.fillColor) {
-        const encoder = buildCategoryEncoder(style.fillColor.colors, '#808080')
+        const encoder = buildCategoryEncoderRgba(style.fillColor.colors, '#808080')
         for (let j = 0; j < idxs.length; j++) {
           fillColors.set(encoder(propsArr[j]?.[style.fillColor.column]), idxs[j] * 4)
         }
       } else if ('column' in style.fillColor) {
         // Column-based encoding
+        const clampRange =
+          (style.fillColor as any).dataRange ||
+          (style.fillColor as any).range ||
+          (typeof (style.fillColor as any).min === 'number' && typeof (style.fillColor as any).max === 'number'
+            ? [(style.fillColor as any).min, (style.fillColor as any).max]
+            : null)
         const encoder = buildColorEncoder(
           propsArr.map(p => p?.[style.fillColor!.column]),
-          style.fillColor,
-          style.fillColor.dataRange
+          style.fillColor as QuantitativeColorStyle,
+          clampRange
         )
         for (let j = 0; j < idxs.length; j++) {
           fillColors.set(encoder(propsArr[j]?.[style.fillColor.column]), idxs[j] * 4)
@@ -281,16 +317,22 @@ export function buildStyleArrays(args: BuildArgs): BuildResult {
           lineColors[idxs[j] * 3 + 2] = rgb[2]
         }
       } else if ('colors' in style.lineColor) {
-        const encoder = buildCategoryEncoder(style.lineColor.colors, '#808080')
+        const encoder = buildCategoryEncoderRgb(style.lineColor.colors, '#808080')
         for (let j = 0; j < idxs.length; j++) {
           lineColors.set(encoder(propsArr[j]?.[style.lineColor.column]), idxs[j] * 3)
         }
       } else if ('column' in style.lineColor) {
         // Column-based encoding
+        const clampRange =
+          (style.lineColor as any).dataRange ||
+          (style.lineColor as any).range ||
+          (typeof (style.lineColor as any).min === 'number' && typeof (style.lineColor as any).max === 'number'
+            ? [(style.lineColor as any).min, (style.lineColor as any).max]
+            : null)
         const encoder = buildColorEncoder(
           propsArr.map(p => p?.[style.lineColor!.column]),
-          style.lineColor,
-          style.lineColor.dataRange
+          style.lineColor as QuantitativeColorStyle,
+          clampRange
         )
         for (let j = 0; j < idxs.length; j++) {
           const [r, g, b] = encoder(propsArr[j]?.[style.lineColor.column])
@@ -330,6 +372,7 @@ export function buildStyleArrays(args: BuildArgs): BuildResult {
           style.lineWidth.dataRange ?? [1, 6],
           style.lineWidth.widthRange ?? [1, 6],
           lineWidths,
+          idxs,
           1,
           0
         )
@@ -349,6 +392,7 @@ export function buildStyleArrays(args: BuildArgs): BuildResult {
           style.pointRadius.dataRange ?? [2, 12],
           style.pointRadius.widthRange ?? [2, 12],
           pointRadii,
+          idxs,
           1,
           0
         )
@@ -368,6 +412,7 @@ export function buildStyleArrays(args: BuildArgs): BuildResult {
           style.fillHeight.dataRange ?? [0, 100],
           style.fillHeight.widthRange ?? [0, 100],
           fillHeights,
+          idxs,
           1,
           0
         )
