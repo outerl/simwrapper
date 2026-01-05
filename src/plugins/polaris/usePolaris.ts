@@ -220,7 +220,7 @@ export async function attachDatabase(
   spl: any,
   arrayBuffer: ArrayBuffer,
   schemaName: string
-): Promise<void> {
+): Promise<string> {
   const filename = buildUniqueAttachmentName(schemaName)
   try {
     // Write buffer to virtual file system so SQLite can see it
@@ -237,9 +237,36 @@ export async function attachDatabase(
 
     await db.exec(`ATTACH DATABASE '${filename}' AS ${schemaName}`)
     console.log(`📎 Attached database '${filename}' as '${schemaName}'`)
+    return filename
   } catch (e) {
     console.error(`Failed to attach database ${schemaName}:`, e)
     throw e
+  }
+}
+
+/**
+ * Detach a previously attached database and remove its virtual file.
+ */
+export async function detachDatabase(
+  db: any,
+  spl: any,
+  schemaName: string,
+  filename: string
+): Promise<void> {
+  try {
+    await db.exec(`DETACH DATABASE '${schemaName}'`)
+  } catch (e) {
+    console.warn(`Failed to detach database ${schemaName}:`, e)
+  }
+
+  try {
+    if (typeof spl?.unlink === 'function') {
+      spl.unlink(filename)
+    } else if (spl?.FS?.unlink) {
+      spl.FS.unlink(`/${filename}`)
+    }
+  } catch (e) {
+    console.warn(`Failed to remove attached database file ${filename}:`, e)
   }
 }
 

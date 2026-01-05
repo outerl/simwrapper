@@ -13,7 +13,7 @@ import { i18n } from './i18n'
 import globalStore from '@/store'
 import { FileSystemConfig } from '@/Globals'
 import PolarisFileSystem from './PolarisFileSystem'
-import { initSql, openDb, releaseSql, releaseDb, acquireLoadingSlot, parsePolarisYaml, buildVizDetails, buildTables, buildGeoFeatures, getTotalMapsLoading, mapLoadingComplete, autoDetectDatabases, attachDatabase } from './usePolaris'
+import { initSql, openDb, releaseSql, releaseDb, acquireLoadingSlot, parsePolarisYaml, buildVizDetails, buildTables, buildGeoFeatures, getTotalMapsLoading, mapLoadingComplete, autoDetectDatabases, attachDatabase, detachDatabase } from './usePolaris'
 import { buildStyleArrays } from './styling'
 import DeckMapComponent from '@/plugins/shape-file/DeckMapComponent.vue'
 import LegendColors from '@/components/LegendColors.vue'
@@ -27,7 +27,7 @@ const MyComponent = defineComponent({
   data() {
     const uid = `id-${Math.floor(1e12 * Math.random())}`
     return {
-      globalState: globalStore.state, vizDetails: {} as VizDetails, layerConfigs: {} as { [layerName: string]: LayerConfig }, loadingText: '', id: uid, layerId: `polaris-layer-${uid}`, polarisFileSystem: null as any, spl: null as any, db: null as any, dbPath: '' as string, tables: [] as Array<{ name: string; type: string; rowCount: number; columns: any[] }>, isLoaded: false, geoJsonFeatures: [] as any[], hasGeometry: false, bgLayers: null as BackgroundLayers | null, featureFilter: new Float32Array(), fillColors: new Uint8ClampedArray(), fillHeights: new Float32Array(), lineColors: new Uint8ClampedArray(), lineWidths: new Float32Array(), pointRadii: new Float32Array(), redrawCounter: 0, isRGBA: false, legendItems: [] as Array<{ label: string; color: string; value: any }>, hasSignaledLoadComplete: false, hasAcquiredLoadingSlot: false
+      globalState: globalStore.state, vizDetails: {} as VizDetails, layerConfigs: {} as { [layerName: string]: LayerConfig }, loadingText: '', id: uid, layerId: `polaris-layer-${uid}`, polarisFileSystem: null as any, spl: null as any, db: null as any, dbPath: '' as string, tables: [] as Array<{ name: string; type: string; rowCount: number; columns: any[] }>, isLoaded: false, geoJsonFeatures: [] as any[], hasGeometry: false, bgLayers: null as BackgroundLayers | null, featureFilter: new Float32Array(), fillColors: new Uint8ClampedArray(), fillHeights: new Float32Array(), lineColors: new Uint8ClampedArray(), lineWidths: new Float32Array(), pointRadii: new Float32Array(), redrawCounter: 0, isRGBA: false, legendItems: [] as Array<{ label: string; color: string; value: any }>, hasSignaledLoadComplete: false, hasAcquiredLoadingSlot: false, attachments: [] as Array<{ schema: string; filename: string }>
     }
   },
 
@@ -107,7 +107,8 @@ const MyComponent = defineComponent({
           this.loadingText = 'Attaching demand database...'
           const demandBlob = await this.polarisFileSystem.loadPolarisDatabase(this.vizDetails.demandDatabase)
           if (demandBlob) {
-            await attachDatabase(this.db, this.spl, demandBlob, 'demand')
+            const filename = await attachDatabase(this.db, this.spl, demandBlob, 'demand')
+            this.attachments.push({ schema: 'demand', filename })
           }
         }
 
@@ -115,7 +116,8 @@ const MyComponent = defineComponent({
           this.loadingText = 'Attaching result database...'
           const resultBlob = await this.polarisFileSystem.loadPolarisDatabase(this.vizDetails.resultDatabase)
           if (resultBlob) {
-            await attachDatabase(this.db, this.spl, resultBlob, 'result')
+            const filename = await attachDatabase(this.db, this.spl, resultBlob, 'result')
+            this.attachments.push({ schema: 'result', filename })
           }
         }
 
@@ -158,7 +160,7 @@ const MyComponent = defineComponent({
           memoryOptions
         )
 
-        this.releaseMainDatabase()
+        await this.releaseMainDatabase()
         
         await new Promise(resolve => setTimeout(resolve, 10))
 
@@ -187,16 +189,31 @@ const MyComponent = defineComponent({
     applyStyles(styles: ReturnType<typeof buildStyleArrays>): void {
       Object.assign(this, { fillColors: styles.fillColors, lineColors: styles.lineColors, lineWidths: styles.lineWidths, pointRadii: styles.pointRadii, fillHeights: styles.fillHeights, featureFilter: styles.featureFilter, isRGBA: true, redrawCounter: this.redrawCounter + 1 })
     },
-    releaseMainDatabase(): void {
+    async releaseMainDatabase(): Promise<void> {
+      await this.detachAttachedDatabases()
       if (this.dbPath) { releaseDb(this.dbPath); this.dbPath = '' }
       this.db = null; this.tables = []
     },
-    cleanupMemory(): void {
-      this.releaseMainDatabase(); releaseSql(); this.spl = null
+    async cleanupMemory(): Promise<void> {
+      await this.releaseMainDatabase(); releaseSql(); this.spl = null
       this.geoJsonFeatures = []; this.tables = []
       this.fillColors = new Uint8ClampedArray(); this.lineColors = new Uint8ClampedArray()
       this.lineWidths = new Float32Array(); this.pointRadii = new Float32Array()
       this.fillHeights = new Float32Array(); this.featureFilter = new Float32Array()
+    },
+    async detachAttachedDatabases(): Promise<void> {
+      if (!this.db || !this.spl || !this.attachments.length) return
+      const currentDb = this.db
+      const currentSpl = this.spl
+      const attachments = [...this.attachments]
+      this.attachments = []
+      for (const { schema, filename } of attachments) {
+        try {
+          await detachDatabase(currentDb, currentSpl, schema, filename)
+        } catch (e) {
+          console.warn(`Failed to detach ${schema} (${filename}):`, e)
+        }
+      }
     },
 
     async getVizDetails(): Promise<void> {
