@@ -364,7 +364,7 @@ export async function buildTables(
     if (!select.includes(name)) continue
     const schema = await getTableSchema(db, name)
     const rowCount = await getRowCount(db, name)
-    const hasGeomCol = schema.some((c: any) => c.name.toLowerCase() === 'geometry')
+    const hasGeomCol = schema.some((c: any) => c.name.toLowerCase() === 'geo')
     if (hasGeomCol) hasGeometry = true
     tables.push({ name, type: 'table', rowCount, columns: schema })
   }
@@ -396,7 +396,7 @@ export async function buildGeoFeatures(
   const layersToProcess = Object.keys(plain).length
     ? Object.entries(plain)
     : tables
-      .filter(t => t.columns.some((c: any) => c.name.toLowerCase() === 'geometry'))
+      .filter(t => t.columns.some((c: any) => c.name.toLowerCase() === 'geo'))
       .map(t => [t.name, { table: t.name, type: 'line' as const }])
 
   const features: any[] = []
@@ -406,7 +406,7 @@ export async function buildGeoFeatures(
     const tableName = layerConfig.table || layerName
     const table = tables.find(t => t.name === tableName)
     if (!table) continue
-    if (!table.columns.some((c: any) => c.name.toLowerCase() === 'geometry')) continue
+    if (!table.columns.some((c: any) => c.name.toLowerCase() === 'geo')) continue
 
     const layerFeatures = await fetchGeoJSONFeatures(
       db,

@@ -155,25 +155,25 @@ export async function fetchGeoJSONFeatures(
     const colsToSelect = table.columns
       .filter((c: any) => {
         const name = c.name.toLowerCase()
-        return name !== 'geometry' && 
+        return name !== 'geo' && 
                (usedColumns.has(c.name) || essentialCols.has(name))
       })
       .map((c: any) => `"${c.name}"`)
     
     columnNames = colsToSelect.length > 0 
       ? colsToSelect.join(', ')
-      : table.columns
-          .filter((c: any) => c.name.toLowerCase() !== 'geometry')
+        : table.columns
+          .filter((c: any) => c.name.toLowerCase() !== 'geo')
           .map((c: any) => `"${c.name}"`)
           .join(', ')
   } else {
     columnNames = table.columns
-      .filter((c: any) => c.name.toLowerCase() !== 'geometry')
+        .filter((c: any) => c.name.toLowerCase() !== 'geo')
       .map((c: any) => `"${c.name}"`)
       .join(', ')
   }
 
-  let filterClause = 'geometry IS NOT NULL'
+      let filterClause = 'geo IS NOT NULL'
   if (
     layerConfig &&
     typeof layerConfig.sqlFilter === 'string' &&
@@ -184,8 +184,8 @@ export async function fetchGeoJSONFeatures(
 
   const query = `
     SELECT ${columnNames},
-           AsGeoJSON(geometry) as geojson_geom,
-           GeometryType(geometry) as geom_type
+           AsGeoJSON(geo) as geojson_geom,
+           GeometryType(geo) as geom_type
     FROM "${table.name}"
     WHERE ${filterClause}
     LIMIT ${limit};
@@ -200,10 +200,10 @@ export async function fetchGeoJSONFeatures(
     ? table.columns.filter((c: any) => {
         const name = c.name.toLowerCase()
         const essentialCols = new Set(['id', 'name', 'link', 'node', 'zone', 'type'])
-        return name !== 'geometry' && 
+        return name !== 'geo' && 
                (usedColumns.has(c.name) || essentialCols.has(name))
       })
-    : table.columns.filter((c: any) => c.name.toLowerCase() !== 'geometry')
+    : table.columns.filter((c: any) => c.name.toLowerCase() !== 'geo')
 
   const BATCH_SIZE = 5000
   
