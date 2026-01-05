@@ -325,9 +325,8 @@ export function buildVizDetails(
     }
   }
 
-  // Default center: Chicago area (POLARIS is often used for Chicago models)
-  const defaultCenter: [number, number] = [-87.63, 41.88]
-  const defaultZoom = 10
+  // No hardcoded center; let runtime compute from data when not provided
+  const defaultZoom = 13
 
   return {
     title: scenarioConfig?.description || 'POLARIS Model',
@@ -336,7 +335,7 @@ export function buildVizDetails(
     demandDatabase: databases.demand,
     resultDatabase: databases.result,
     layers: flatLayers,
-    center: simwrapperConfig.center || defaultCenter,
+    center: simwrapperConfig.center,
     zoom: simwrapperConfig.zoom ?? defaultZoom,
     bearing: simwrapperConfig.bearing,
     pitch: simwrapperConfig.pitch,
