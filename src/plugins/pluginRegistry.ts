@@ -151,7 +151,7 @@ const plugins = [
   {
     kebabName: "polaris-reader",
     filePatterns: ['**/polaris.y?(a)ml'],
-    component: defineAsyncComponent(() => import('./polaris/PolarisReader.vue')),
+    component: defineAsyncComponent(() => import('@/dash-panels/polaris.vue')),
   }
 ]
 

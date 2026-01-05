@@ -1,18 +1,18 @@
 <template lang="pug">
-.c-polaris-viewer.flex-col(:class="{'is-thumbnail': thumbnail}")
+.c-polaris-viewer.flex-col(:class="{'is-thumbnail': thumbnail, 'is-dashboard': itemType === 'dashboard', 'is-map-view': itemType === 'map'}")
   .loading(v-if="!isLoaded") {{ loadingText }}
-  .map-viewer(v-show="isLoaded")
-    DeckMapComponent(ref="deckMap" v-if="geoJsonFeatures.length && bgLayers && layerId" :features="geoJsonFeatures" :bgLayers="bgLayers" :cbTooltip="handleTooltip" :cbClickEvent="handleFeatureClick" :dark="globalState.isDarkMode" :featureFilter="featureFilter" :fillColors="fillColors" :fillHeights="fillHeights" :highlightedLinkIndex="-1" :initialView="null" :isRGBA="isRGBA" :isAtlantis="false" :lineColors="lineColors" :lineWidths="lineWidths" :mapIsIndependent="false" :opacity="1" :pointRadii="pointRadii" :redraw="redrawCounter" :screenshot="0" :viewId="layerId" :lineWidthUnits="'meters'" :pointRadiusUnits="'meters'")
-    .legend-overlay(v-if="legendItems.length" :style="{background: legendBgColor}")
-      LegendColors(:items="legendItems" title="Legend")
-  .dashboard(v-if="dashboardSections.length")
-    h3 Dashboard
+  .dashboard(v-if="isLoaded && showDashboard && dashboardSections.length")
+    h3(v-if="dashboardTitle") {{ dashboardTitle }}
     .dashboard-section(v-for="section in dashboardSections" :key="section.name")
       h4 {{ section.name }}
       .dashboard-cards
         .dashboard-card(v-for="row in section.rows" :key="row.label" :class="{'is-alt': (section.rows.indexOf(row) % 2) === 1}")
           .card-label {{ row.label }}
           .card-value {{ row.value }}
+  .map-viewer(v-if="showMap && isLoaded")
+    DeckMapComponent(ref="deckMap" v-if="geoJsonFeatures.length && bgLayers && layerId" :features="geoJsonFeatures" :bgLayers="bgLayers" :cbTooltip="handleTooltip" :cbClickEvent="handleFeatureClick" :dark="globalState.isDarkMode" :featureFilter="featureFilter" :fillColors="fillColors" :fillHeights="fillHeights" :highlightedLinkIndex="-1" :initialView="null" :isRGBA="isRGBA" :isAtlantis="false" :lineColors="lineColors" :lineWidths="lineWidths" :mapIsIndependent="false" :opacity="1" :pointRadii="pointRadii" :redraw="redrawCounter" :screenshot="0" :viewId="layerId" :lineWidthUnits="'meters'" :pointRadiusUnits="'meters'")
+    .legend-overlay(v-if="legendItems.length" :style="{background: legendBgColor}")
+      LegendColors(:items="legendItems" title="Legend")
 </template>
 
 <script lang="ts">
@@ -31,7 +31,7 @@ import type { LayerConfig, VizDetails } from './types'
 const MyComponent = defineComponent({
   name: 'PolarisReader', i18n,
   components: { DeckMapComponent, LegendColors },
-  props: { root: { type: String, required: true }, subfolder: { type: String, required: true }, config: { type: Object as any }, resize: Object as any, thumbnail: Boolean, yamlConfig: String },
+  props: { root: { type: String, required: true }, subfolder: { type: String, required: true }, config: { type: Object as any }, resize: Object as any, thumbnail: Boolean, yamlConfig: String, itemType: { type: String, default: '' } },
   data() {
     const uid = `id-${Math.floor(1e12 * Math.random())}`
     return {
@@ -44,6 +44,23 @@ const MyComponent = defineComponent({
       const project = this.$store.state.svnProjects.find((a: FileSystemConfig) => a.slug === this.root)
       if (!project) throw new Error(`Project '${this.root}' not found`)
       return project
+    },
+    // Show dashboard: when itemType is 'dashboard' OR when standalone (no itemType) and has dashboard config
+    showDashboard(): boolean {
+      if (this.itemType === 'dashboard') return true
+      if (this.itemType === 'map') return false
+      // Standalone mode: show dashboard if it exists
+      return !!this.vizDetails?.dashboard?.sections?.length
+    },
+    // Show map: when itemType is 'map' OR when standalone (no itemType) and has geometry
+    showMap(): boolean {
+      if (this.itemType === 'map') return true
+      if (this.itemType === 'dashboard') return false
+      // Standalone mode: show map if geometry exists
+      return this.hasGeometry
+    },
+    dashboardTitle(): string {
+      return this.config?.title || this.config?.item || this.vizDetails?.dashboard?.title || ''
     },
     legendBgColor(): string { return this.globalState.isDarkMode ? 'rgba(32,32,32,0.95)' : 'rgba(255,255,255,0.95)' }
   },
@@ -147,6 +164,13 @@ const MyComponent = defineComponent({
       try {
         this.loadingText = 'Extracting geometries...'
 
+        // For dashboard type, just load metrics and skip geometry
+        if (this.itemType === 'dashboard') {
+          await this.loadDashboardMetrics()
+          await this.releaseMainDatabase()
+          return
+        }
+
         if (!this.hasGeometry) {
           await this.loadDashboardMetrics()
           await this.releaseMainDatabase()
@@ -172,7 +196,7 @@ const MyComponent = defineComponent({
         )
 
         if (!this.vizDetails.center) {
-          const autoCenter = this.computeZoneCenter(features)
+          const autoCenter = this.computeMapCenter(features)
           if (autoCenter) this.vizDetails.center = autoCenter
         }
 
@@ -207,11 +231,9 @@ const MyComponent = defineComponent({
     applyStyles(styles: ReturnType<typeof buildStyleArrays>): void {
       Object.assign(this, { fillColors: styles.fillColors, lineColors: styles.lineColors, lineWidths: styles.lineWidths, pointRadii: styles.pointRadii, fillHeights: styles.fillHeights, featureFilter: styles.featureFilter, isRGBA: true, redrawCounter: this.redrawCounter + 1 })
     },
-    computeZoneCenter(features: any[]): [number, number] | null {
-      const zoneFeatures = features.filter(f => {
-        const layer = f?.properties?._layer
-        return typeof layer === 'string' && layer.toLowerCase().includes('zone')
-      })
+    computeMapCenter(features: any[]): [number, number] | null {
+      // Use all features to compute bounding box center
+      if (!features.length) return null
 
       let minLon = Infinity, minLat = Infinity, maxLon = -Infinity, maxLat = -Infinity
 
@@ -230,7 +252,7 @@ const MyComponent = defineComponent({
         for (const c of coords) update(c)
       }
 
-      for (const f of zoneFeatures) {
+      for (const f of features) {
         update(f?.geometry?.coordinates)
       }
 
@@ -282,18 +304,49 @@ const MyComponent = defineComponent({
 
     async getVizDetails(): Promise<void> {
       if (this.config) {
-        // Direct config from dashboard YAML
+        // Direct config from item in YAML array
         this.vizDetails = { ...this.config } as VizDetails
-        if (this.config.supplyDatabase) {
-          this.vizDetails.supplyDatabase = this.resolvePath(this.config.supplyDatabase)
+        
+        // For dashboard type, extract dashboard config from sections
+        if (this.itemType === 'dashboard' && this.config.sections) {
+          this.vizDetails.dashboard = {
+            title: this.config.title || this.config.item,
+            sections: this.config.sections
+          }
         }
-        if (this.config.demandDatabase) {
-          this.vizDetails.demandDatabase = this.resolvePath(this.config.demandDatabase)
+        
+        // For map type, extract layer configs
+        if (this.itemType === 'map' && this.config.layers) {
+          this.layerConfigs = {}
+          for (const [layerName, layerDef] of Object.entries(this.config.layers)) {
+            const def = layerDef as any
+            const styleObj = def.style || def
+            // Map shorthand YAML keys to standard layer config keys
+            this.layerConfigs[layerName] = {
+              table: styleObj.table || layerName,
+              type: styleObj.type || 'line',
+              style: {
+                lineColor: styleObj.color || styleObj.lineColor,
+                lineWidth: styleObj.width ?? styleObj.lineWidth,
+                fillColor: styleObj.fill || styleObj.fillColor,
+                pointRadius: styleObj.radius ?? styleObj.pointRadius,
+              }
+            }
+          }
         }
-        if (this.config.resultDatabase) {
-          this.vizDetails.resultDatabase = this.resolvePath(this.config.resultDatabase)
+        
+        // Auto-detect databases if not specified
+        const { files } = await this.polarisFileSystem.getDirectory(this.subfolder)
+        const detected = await autoDetectDatabases(files)
+        if (!this.vizDetails.supplyDatabase && detected.supply) {
+          this.vizDetails.supplyDatabase = this.resolvePath(detected.supply)
         }
-        this.layerConfigs = this.config.layers || {}
+        if (!this.vizDetails.demandDatabase && detected.demand) {
+          this.vizDetails.demandDatabase = this.resolvePath(detected.demand)
+        }
+        if (!this.vizDetails.resultDatabase && detected.result) {
+          this.vizDetails.resultDatabase = this.resolvePath(detected.result)
+        }
       } else {
         // Auto-detect from polaris.yaml in the folder
         await this.loadPolarisConfig()
@@ -315,7 +368,7 @@ const MyComponent = defineComponent({
         }
 
         const yamlText = await yamlBlob.text()
-        const { simwrapper, scenario } = await parsePolarisYaml(yamlText, this.subfolder)
+        const { webpolaris, scenario } = await parsePolarisYaml(yamlText, this.subfolder)
         
         // Get database files from scenario or auto-detect
         let databases: { supply?: string; demand?: string; result?: string } = {}
@@ -339,8 +392,50 @@ const MyComponent = defineComponent({
           if (detected.result && !databases.result) databases.result = this.resolvePath(detected.result)
         }
         
-        this.vizDetails = buildVizDetails(simwrapper, scenario, this.subfolder, databases)
-        this.layerConfigs = this.vizDetails.layers || {}
+        // Handle simwrapper as array (new format) or object (legacy format)
+        if (Array.isArray(simwrapper)) {
+          // New array format: merge all items into vizDetails
+          this.vizDetails = {
+            title: 'POLARIS Model',
+            description: '',
+            supplyDatabase: databases.supply,
+            demandDatabase: databases.demand,
+            resultDatabase: databases.result,
+            layers: {},
+          } as any
+          
+          // Process each item in the array
+          for (const item of simwrapper) {
+            if (item.type === 'dashboard' && item.sections) {
+              this.vizDetails.dashboard = {
+                title: item.item || item.title,
+                sections: item.sections
+              }
+            }
+            if (item.type === 'map' && item.layers) {
+              for (const [layerName, layerDef] of Object.entries(item.layers)) {
+                const def = layerDef as any
+                const styleObj = def.style || def
+                // Map shorthand YAML keys to standard layer config keys
+                this.layerConfigs[layerName] = {
+                  table: styleObj.table || layerName,
+                  type: styleObj.type || 'line',
+                  style: {
+                    lineColor: styleObj.color || styleObj.lineColor,
+                    lineWidth: styleObj.width ?? styleObj.lineWidth,
+                    fillColor: styleObj.fill || styleObj.fillColor,
+                    pointRadius: styleObj.radius ?? styleObj.pointRadius,
+                  }
+                }
+              }
+              this.vizDetails.layers = this.layerConfigs
+            }
+          }
+        } else {
+          // Legacy object format
+          this.vizDetails = buildVizDetails(simwrapper || {}, scenario, this.subfolder, databases)
+          this.layerConfigs = this.vizDetails.layers || {}
+        }
       } catch (error) {
         throw new Error(`Failed to load polaris.yaml: ${error instanceof Error ? error.message : String(error)}`)
       }
@@ -381,8 +476,19 @@ const MyComponent = defineComponent({
     handleTooltip(hoverInfo: any): string {
       const props = hoverInfo?.object?.properties
       if (!props) return ''
-      const EXCLUDE = new Set(['_table', '_layer', '_layerConfig', 'geometry'])
-      const lines = [props._layer && `Layer: ${props._layer}`, props._table && props._table !== props._layer && `Table: ${props._table}`, ...Object.entries(props).filter(([key]) => !EXCLUDE.has(key)).slice(0, 5).map(([key, value]) => value != null && `${key}: ${value}`)].filter(Boolean)
+      const EXCLUDE = new Set(['_table', '_layer', '_layerConfig', 'geometry', 'geo'])
+      const lines: string[] = []
+      
+      // Add layer/table header
+      if (props._layer) lines.push(`<b>${props._layer}</b>`)
+      
+      // Add all properties (not just first 5)
+      for (const [key, value] of Object.entries(props)) {
+        if (EXCLUDE.has(key) || key.startsWith('_')) continue
+        if (value == null) continue
+        const displayValue = typeof value === 'number' ? value.toLocaleString('en-US') : value
+        lines.push(`${key}: ${displayValue}`)
+      }
       return lines.join('<br/>')
     },
 
@@ -404,57 +510,15 @@ const MyComponent = defineComponent({
           const sql = metric.query
           try {
             const targetDb = await this.getDbForMetric(metric.db)
-            const execResult = await targetDb.exec(sql)
-
-            // Normalize the various SPL/sql.js shapes
-            const resultArray = Array.isArray(execResult) ? execResult : execResult?.results
-            const primaryRaw = resultArray?.[0] || execResult
-            const getterOutput = typeof primaryRaw?.get === 'function' ? primaryRaw.get() : primaryRaw?.get
-            const primary = getterOutput || primaryRaw
-
-            const objs = primary?.objs || primary?.get?.objs
-            const rows = primary?.rows || primary?.get?.rows
-            const values = primary?.values || primary?.get?.values
-
-            if (process?.env?.NODE_ENV !== 'production') {
-              const summary = {
-                label: metric.label,
-                db: metric.db || 'supply',
-                objsLen: objs?.length || 0,
-                rowsLen: rows?.length || 0,
-                valuesLen: values?.length || 0,
-                objKeys: objs?.[0] ? Object.keys(objs[0]) : [],
-                hasGetter: typeof primaryRaw?.get === 'function',
-                isArrayResult: Array.isArray(execResult),
-              }
-              console.debug('Dashboard metric result summary', summary)
-            }
-
-            // Prefer object form (consistent with db.ts helpers)
+            // SPL uses chained .get.objs pattern (consistent with db.ts)
+            const objs = await targetDb.exec(sql).get.objs
             if (objs?.length) {
               const firstObj = objs[0]
               const firstKey = firstObj && Object.keys(firstObj)[0]
-              if (firstKey) value = firstObj[firstKey]
+              if (firstKey !== undefined) value = firstObj[firstKey]
             }
-
-            // Fallback to row array form
-            if ((value === '-' || value === undefined) && rows?.length) {
-              const firstRow = rows[0]
-              if (Array.isArray(firstRow)) {
-                value = firstRow[0]
-              }
-            }
-
-            // Final fallback: sql.js-style values matrix
-            if ((value === '-' || value === undefined) && values?.length) {
-              const firstRow = values[0]
-              if (Array.isArray(firstRow)) value = firstRow[0]
-              else if (firstRow !== undefined) value = firstRow
-            }
-
-            if (value === undefined || value === null || Number.isNaN(value)) {
-              value = '-'
-            }
+            if (value === undefined || value === null || Number.isNaN(value)) value = '-'
+            if (value !== '-') value = this.formatMetricValue(value)
           } catch (e) {
             console.warn(`Dashboard metric failed (${metric.label})`, { sql, db: metric.db || 'supply', error: e })
             value = '-'
@@ -492,8 +556,16 @@ const MyComponent = defineComponent({
       }
     },
 
+    formatMetricValue(value: any): any {
+      const numeric = typeof value === 'number' ? value : Number(value)
+      if (Number.isFinite(numeric)) {
+        return numeric.toLocaleString('en-US')
+      }
+      return value
+    },
+
     setMapCenter(): void {
-      let { center, zoom = 10, bearing = 0, pitch = 0 } = this.vizDetails
+      let { center, zoom = 12, bearing = 0, pitch = 0 } = this.vizDetails
       if (typeof center === 'string') center = center.split(',').map((c: string) => parseFloat(c.trim())) as [number, number]
       if (Array.isArray(center) && center.length === 2) globalStore.commit('setMapCamera', { longitude: center[0], latitude: center[1], zoom, bearing, pitch })
     }
@@ -508,21 +580,30 @@ export default MyComponent
 @import './reader.scss';
 
 .c-polaris-viewer {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  right: 0;
   background-color: var(--bgCardFrame);
   display: flex;
   flex-direction: column;
+  width: 100%;
+}
+
+.c-polaris-viewer.is-dashboard {
+  // Dashboard items size to content
+  height: auto;
+  min-height: auto;
+}
+
+.c-polaris-viewer.is-map-view {
+  // Map items fill container
+  height: 100%;
+  min-height: inherit;
 }
 
 .map-viewer {
   position: relative;
   flex: 1;
   width: 100%;
-  height: 100%;
+  min-height: 360px;
+  z-index: 0;
 }
 
 .legend-overlay {

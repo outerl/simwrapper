@@ -76,6 +76,10 @@ export interface PolarisSimwrapperConfig {
   center?: [number, number]
   /** Initial map zoom level (default: 10) */
   zoom?: number
+  /** Show map in reader (default true) */
+  showMap?: boolean
+  /** Place dashboard before map (default true). Set false to show map before dashboard */
+  dashboardFirst?: boolean
   /** Map bearing/rotation in degrees */
   bearing?: number
   /** Map pitch/tilt in degrees */
@@ -104,6 +108,8 @@ export interface PolarisSimwrapperConfig {
   }>
   /** Dashboard configuration (cards) */
   dashboard?: {
+    /** Optional title shown above dashboard sections */
+    title?: string
     sections?: DashboardSection[]
   }
   /** Memory optimization: Max features per layer (default: 100000) */
@@ -156,6 +162,8 @@ export interface VizDetails {
   bearing?: number
   /** Map pitch/tilt in degrees */
   pitch?: number
+  /** Show map in reader (default true) */
+  showMap?: boolean
   /** Memory optimization: Max features per layer (default: 100000) */
   geometryLimit?: number
   /** Memory optimization: Coordinate decimal precision (default: 5 = ~1m) */
@@ -180,6 +188,7 @@ export interface VizDetails {
   }>
   /** Dashboard configuration (cards) */
   dashboard?: {
+    title?: string
     sections?: DashboardSection[]
   }
   /** Analysis iteration to use */

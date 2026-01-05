@@ -274,15 +274,16 @@ export async function detachDatabase(
 
 /**
  * Parse polaris.yaml configuration file
+ * Returns webpolaris as-is (can be array of items or object)
  */
 export async function parsePolarisYaml(
   yamlText: string,
   subfolder: string | null
-): Promise<{ simwrapper: PolarisSimwrapperConfig; scenario?: PolarisScenarioConfig }> {
+): Promise<{ webpolaris: any; scenario?: PolarisScenarioConfig }> {
   const config = YAML.parse(yamlText)
 
   return {
-    simwrapper: config.simwrapper || {},
+    webpolaris: config.webpolaris,
     scenario: config.scenario || config
   }
 }
@@ -326,7 +327,7 @@ export function buildVizDetails(
   }
 
   // No hardcoded center; let runtime compute from data when not provided
-  const defaultZoom = 13
+  const defaultZoom = 11
 
   return {
     title: scenarioConfig?.description || 'POLARIS Model',
@@ -339,6 +340,7 @@ export function buildVizDetails(
     zoom: simwrapperConfig.zoom ?? defaultZoom,
     bearing: simwrapperConfig.bearing,
     pitch: simwrapperConfig.pitch,
+    showMap: simwrapperConfig.showMap,
     geometryLimit: simwrapperConfig.geometryLimit,
     coordinatePrecision: simwrapperConfig.coordinatePrecision,
     minimalProperties: simwrapperConfig.minimalProperties,

@@ -67,6 +67,84 @@ const getPaletteColors = (name: string, numColors: number): string[] => {
 }
 
 /**
+ * Generate a deterministic random color from a string seed (for categorical values)
+ * 
+ * @param seed - String value to generate color from
+ * @returns RGBA array [R, G, B, A]
+ */
+export const generateRandomColor = (seed: string): RGBA => {
+  let hash = 0
+  for (let i = 0; i < seed.length; i++) {
+    hash = seed.charCodeAt(i) + ((hash << 5) - hash)
+  }
+  // Use golden ratio to spread colors evenly in hue space
+  const hue = ((hash & 0xffff) / 0xffff) * 360
+  const saturation = 0.65 + ((hash >> 16) & 0xff) / 255 * 0.25
+  const lightness = 0.45 + ((hash >> 24) & 0xff) / 255 * 0.15
+  
+  // HSL to RGB conversion
+  const c = (1 - Math.abs(2 * lightness - 1)) * saturation
+  const x = c * (1 - Math.abs((hue / 60) % 2 - 1))
+  const m = lightness - c / 2
+  let r = 0, g = 0, b = 0
+  if (hue < 60) { r = c; g = x; b = 0 }
+  else if (hue < 120) { r = x; g = c; b = 0 }
+  else if (hue < 180) { r = 0; g = c; b = x }
+  else if (hue < 240) { r = 0; g = x; b = c }
+  else if (hue < 300) { r = x; g = 0; b = c }
+  else { r = c; g = 0; b = x }
+  return [
+    Math.round((r + m) * 255),
+    Math.round((g + m) * 255),
+    Math.round((b + m) * 255),
+    255
+  ]
+}
+
+/**
+ * Build categorical encoder with auto-generated random colors
+ * 
+ * @param values - Array of categorical values
+ * @returns Encoder function that maps values to RGBA colors
+ */
+export const buildAutoCategoryEncoder = (values: any[]): ((value: any) => RGBA) => {
+  const unique = [...new Set(values.map(String))]
+  const colorMap = new Map<string, RGBA>()
+  for (const val of unique) {
+    colorMap.set(val, generateRandomColor(val))
+  }
+  return (value: any) => colorMap.get(String(value)) || [128, 128, 128, 255]
+}
+
+/**
+ * Build continuous gradient encoder for numeric values
+ * 
+ * @param values - Array of numeric values to determine range
+ * @param colors - Start and end colors for gradient (hex strings)
+ * @returns Encoder function that maps numeric values to RGBA colors
+ */
+export const buildGradientEncoder = (
+  values: number[],
+  colors: [string, string] = ['#ffffcc', '#006837']
+): ((value: number) => RGBA) => {
+  const min = safeMin(values)
+  const max = safeMax(values)
+  const range = max - min || 1
+  const startRgba = hexToRgba(colors[0])
+  const endRgba = hexToRgba(colors[1])
+
+  return (value: number) => {
+    const t = Math.max(0, Math.min(1, (value - min) / range))
+    return [
+      Math.round(startRgba[0] + t * (endRgba[0] - startRgba[0])),
+      Math.round(startRgba[1] + t * (endRgba[1] - startRgba[1])),
+      Math.round(startRgba[2] + t * (endRgba[2] - startRgba[2])),
+      255,
+    ]
+  }
+}
+
+/**
  * Safely converts a value to number, returning null for invalid values
  * 
  * @param value - Value to convert to number

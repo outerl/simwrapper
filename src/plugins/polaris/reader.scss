@@ -5,14 +5,25 @@
 
 /* Main container styles */
 .c-polaris-viewer {
+  background-color: var(--bgCardFrame);
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+/* Dashboard mode - sizes to content */
+.c-polaris-viewer.is-dashboard {
+  position: relative;
+  height: auto;
+}
+
+/* Map mode - fills parent container */
+.c-polaris-viewer.is-map-view {
   position: absolute;
   top: 0;
   bottom: 0;
   left: 0;
   right: 0;
-  background-color: var(--bgCardFrame);
-  display: flex;
-  flex-direction: column;
 }
 
 /* Map container */
