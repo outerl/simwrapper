@@ -35,7 +35,7 @@ const MyComponent = defineComponent({
   data() {
     const uid = `id-${Math.floor(1e12 * Math.random())}`
     return {
-      globalState: globalStore.state, vizDetails: {} as VizDetails, layerConfigs: {} as { [layerName: string]: LayerConfig }, loadingText: '', id: uid, layerId: `polaris-layer-${uid}`, polarisFileSystem: null as any, spl: null as any, db: null as any, dbPath: '' as string, tables: [] as Array<{ name: string; type: string; rowCount: number; columns: any[] }>, isLoaded: false, geoJsonFeatures: [] as any[], hasGeometry: false, bgLayers: null as BackgroundLayers | null, featureFilter: new Float32Array(), fillColors: new Uint8ClampedArray(), fillHeights: new Float32Array(), lineColors: new Uint8ClampedArray(), lineWidths: new Float32Array(), pointRadii: new Float32Array(), redrawCounter: 0, isRGBA: false, legendItems: [] as Array<{ label: string; color: string; value: any }>, hasSignaledLoadComplete: false, hasAcquiredLoadingSlot: false, attachments: [] as Array<{ schema: string; filename: string }>, dashboardSections: [] as Array<{ name: string; rows: Array<{ label: string; value: any }> }>
+      globalState: globalStore.state, vizDetails: {} as VizDetails, layerConfigs: {} as { [layerName: string]: LayerConfig }, loadingText: '', id: uid, layerId: `polaris-layer-${uid}`, polarisFileSystem: null as any, spl: null as any, db: null as any, dbPath: '' as string, tables: [] as Array<{ name: string; type: string; rowCount: number; columns: any[] }>, isLoaded: false, geoJsonFeatures: [] as any[], hasGeometry: false, bgLayers: null as BackgroundLayers | null, featureFilter: new Float32Array(), fillColors: new Uint8ClampedArray(), fillHeights: new Float32Array(), lineColors: new Uint8ClampedArray(), lineWidths: new Float32Array(), pointRadii: new Float32Array(), redrawCounter: 0, isRGBA: false, legendItems: [] as Array<{ label: string; color: string; value: any }>, hasSignaledLoadComplete: false, hasAcquiredLoadingSlot: false, attachments: [] as Array<{ schema: string; filename: string }>, dashboardSections: [] as Array<{ name: string; rows: Array<{ label: string; value: any }> }>, metricDbs: {} as Record<string, { db: any; path: string }>
     }
   },
 
@@ -108,7 +108,8 @@ const MyComponent = defineComponent({
         const blob = await this.polarisFileSystem.loadPolarisDatabase(this.dbPath)
         if (!blob) throw new Error(`Failed to load supply database: ${this.dbPath}`)
         
-        this.db = await openDb(this.spl, blob, this.dbPath)
+        const mainDb = await openDb(this.spl, blob, this.dbPath)
+        this.db = markRaw(mainDb)
 
         // Attach optional databases
         if (this.vizDetails.demandDatabase) {
@@ -170,6 +171,11 @@ const MyComponent = defineComponent({
           memoryOptions
         )
 
+        if (!this.vizDetails.center) {
+          const autoCenter = this.computeZoneCenter(features)
+          if (autoCenter) this.vizDetails.center = autoCenter
+        }
+
         await this.loadDashboardMetrics()
 
         await this.releaseMainDatabase()
@@ -201,8 +207,42 @@ const MyComponent = defineComponent({
     applyStyles(styles: ReturnType<typeof buildStyleArrays>): void {
       Object.assign(this, { fillColors: styles.fillColors, lineColors: styles.lineColors, lineWidths: styles.lineWidths, pointRadii: styles.pointRadii, fillHeights: styles.fillHeights, featureFilter: styles.featureFilter, isRGBA: true, redrawCounter: this.redrawCounter + 1 })
     },
+    computeZoneCenter(features: any[]): [number, number] | null {
+      const zoneFeatures = features.filter(f => {
+        const layer = f?.properties?._layer
+        return typeof layer === 'string' && layer.toLowerCase().includes('zone')
+      })
+
+      let minLon = Infinity, minLat = Infinity, maxLon = -Infinity, maxLat = -Infinity
+
+      const update = (coords: any): void => {
+        if (!Array.isArray(coords)) return
+        if (coords.length >= 2 && typeof coords[0] === 'number' && typeof coords[1] === 'number') {
+          const [lon, lat] = coords as [number, number]
+          if (Number.isFinite(lon) && Number.isFinite(lat)) {
+            if (lon < minLon) minLon = lon
+            if (lon > maxLon) maxLon = lon
+            if (lat < minLat) minLat = lat
+            if (lat > maxLat) maxLat = lat
+          }
+          return
+        }
+        for (const c of coords) update(c)
+      }
+
+      for (const f of zoneFeatures) {
+        update(f?.geometry?.coordinates)
+      }
+
+      if (!Number.isFinite(minLon) || !Number.isFinite(minLat) || !Number.isFinite(maxLon) || !Number.isFinite(maxLat)) {
+        return null
+      }
+
+      return [ (minLon + maxLon) / 2, (minLat + maxLat) / 2 ]
+    },
     async releaseMainDatabase(): Promise<void> {
       await this.detachAttachedDatabases()
+      await this.releaseMetricDbs()
       if (this.dbPath) { releaseDb(this.dbPath); this.dbPath = '' }
       this.db = null; this.tables = []
     },
@@ -224,6 +264,18 @@ const MyComponent = defineComponent({
           await detachDatabase(currentDb, currentSpl, schema, filename)
         } catch (e) {
           console.warn(`Failed to detach ${schema} (${filename}):`, e)
+        }
+      }
+    },
+
+    async releaseMetricDbs(): Promise<void> {
+      const entries = Object.values(this.metricDbs)
+      this.metricDbs = {}
+      for (const entry of entries) {
+        try {
+          releaseDb(entry.path)
+        } catch (e) {
+          console.warn(`Failed to release metric DB ${entry.path}:`, e)
         }
       }
     },
@@ -343,42 +395,68 @@ const MyComponent = defineComponent({
 
       const results: Array<{ name: string; rows: Array<{ label: string; value: any }> }> = []
 
-      const applySchema = (sql: string, schema: string) => {
-        if (!sql || schema === 'supply' || schema === 'main') return sql
-        return sql.replace(/\b(from|join)\s+([A-Za-z_][\w]*)/gi, (match, kw, tbl) => {
-          if (tbl.includes('.')) return match
-          return `${kw} ${schema}.${tbl}`
-        })
-      }
-
       for (const section of dashboard.sections) {
         const rows: Array<{ label: string; value: any }> = []
         if (!section?.metrics?.length) continue
 
         for (const metric of section.metrics) {
           let value: any = '-'
-          const schema = metric.db || 'supply'
-          const sql = applySchema(metric.query, schema)
+          const sql = metric.query
           try {
-            const execResult = await this.db.exec(sql)
-            const resultObj = execResult?.get
-            if (resultObj?.rows?.length) {
-              const firstRow = resultObj.rows[0]
+            const targetDb = await this.getDbForMetric(metric.db)
+            const execResult = await targetDb.exec(sql)
+
+            // Normalize the various SPL/sql.js shapes
+            const resultArray = Array.isArray(execResult) ? execResult : execResult?.results
+            const primaryRaw = resultArray?.[0] || execResult
+            const getterOutput = typeof primaryRaw?.get === 'function' ? primaryRaw.get() : primaryRaw?.get
+            const primary = getterOutput || primaryRaw
+
+            const objs = primary?.objs || primary?.get?.objs
+            const rows = primary?.rows || primary?.get?.rows
+            const values = primary?.values || primary?.get?.values
+
+            if (process?.env?.NODE_ENV !== 'production') {
+              const summary = {
+                label: metric.label,
+                db: metric.db || 'supply',
+                objsLen: objs?.length || 0,
+                rowsLen: rows?.length || 0,
+                valuesLen: values?.length || 0,
+                objKeys: objs?.[0] ? Object.keys(objs[0]) : [],
+                hasGetter: typeof primaryRaw?.get === 'function',
+                isArrayResult: Array.isArray(execResult),
+              }
+              console.debug('Dashboard metric result summary', summary)
+            }
+
+            // Prefer object form (consistent with db.ts helpers)
+            if (objs?.length) {
+              const firstObj = objs[0]
+              const firstKey = firstObj && Object.keys(firstObj)[0]
+              if (firstKey) value = firstObj[firstKey]
+            }
+
+            // Fallback to row array form
+            if ((value === '-' || value === undefined) && rows?.length) {
+              const firstRow = rows[0]
               if (Array.isArray(firstRow)) {
                 value = firstRow[0]
               }
             }
-            if ((value === '-' || value === undefined) && resultObj?.objs?.length) {
-              const firstObj = resultObj.objs[0]
-              const firstKey = firstObj && Object.keys(firstObj)[0]
-              if (firstKey) value = firstObj[firstKey]
+
+            // Final fallback: sql.js-style values matrix
+            if ((value === '-' || value === undefined) && values?.length) {
+              const firstRow = values[0]
+              if (Array.isArray(firstRow)) value = firstRow[0]
+              else if (firstRow !== undefined) value = firstRow
             }
 
             if (value === undefined || value === null || Number.isNaN(value)) {
               value = '-'
             }
           } catch (e) {
-            console.warn(`Dashboard metric failed (${metric.label})`, { sql, schema, error: e })
+            console.warn(`Dashboard metric failed (${metric.label})`, { sql, db: metric.db || 'supply', error: e })
             value = '-'
           }
           rows.push({ label: metric.label, value })
@@ -388,6 +466,30 @@ const MyComponent = defineComponent({
       }
 
       this.dashboardSections = results
+    },
+
+    async getDbForMetric(dbKey?: string): Promise<any> {
+      const key = (dbKey || 'supply').toLowerCase()
+      if (key === 'supply' || !dbKey) return this.db
+
+      const path = key === 'demand' ? this.vizDetails.demandDatabase : key === 'result' ? this.vizDetails.resultDatabase : undefined
+      if (!path) return this.db
+
+      if (this.metricDbs[key]) {
+        return this.metricDbs[key].db
+      }
+
+      try {
+        const blob = await this.polarisFileSystem.loadPolarisDatabase(path)
+        if (!blob) return this.db
+        const dbConn = await openDb(this.spl, blob, path)
+        const rawDb = markRaw(dbConn)
+        this.metricDbs[key] = { db: rawDb, path }
+        return rawDb
+      } catch (e) {
+        console.warn(`Failed to load metric DB '${key}'`, e)
+        return this.db
+      }
     },
 
     setMapCenter(): void {

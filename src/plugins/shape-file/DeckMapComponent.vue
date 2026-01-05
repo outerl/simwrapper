@@ -47,7 +47,7 @@ export default defineComponent({
     pointRadii: { type: [Number, Float32Array], required: true }, //  = 4 as number | Float32Array,
     redraw: { type: Number, required: true },
     screenshot: { type: Number, required: true },
-    viewId: { type: Number, required: true },
+    viewId: { type: [Number, String], required: true },
     lineWidthUnits: { type: String, required: false, default: 'pixels' },
     pointRadiusUnits: { type: String, required: false, default: 'pixels' },
   },

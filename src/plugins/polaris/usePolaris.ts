@@ -225,14 +225,16 @@ export async function attachDatabase(
   try {
     // Write buffer to virtual file system so SQLite can see it
     // SPL.js (based on various Emscripten builds) usually exposes FS or a helper
+    const data = new Uint8Array(arrayBuffer)
     if (typeof spl.createFile === 'function') {
-      await spl.createFile(filename, new Uint8Array(arrayBuffer))
-    } else if (spl.FS) {
-      // Standard Emscripten FS
-      const data = new Uint8Array(arrayBuffer)
+      await spl.createFile(filename, data)
+    } else if (spl.FS?.createDataFile) {
       spl.FS.createDataFile('/', filename, data, true, true, true)
+    } else if (spl.FS?.writeFile) {
+      spl.FS.writeFile(`/${filename}`, data, { canOwn: true })
     } else {
-      console.warn('SPL engine FS not found, attempting ATTACH without file creation (likely to fail if not memory DB)')
+      console.warn(`SPL engine FS not found; skipping attach for ${schemaName}`)
+      return ''
     }
 
     await db.exec(`ATTACH DATABASE '${filename}' AS ${schemaName}`)
