@@ -20,6 +20,16 @@ import YAML from 'yaml'
 import type { VizDetails, LayerConfig, PolarisSimwrapperConfig, PolarisScenarioConfig } from './types'
 import { getTableNames, getTableSchema, getRowCount, fetchGeoJSONFeatures } from './db'
 
+function buildUniqueAttachmentName(schemaName: string): string {
+  const randomId =
+    typeof globalThis !== 'undefined' &&
+    globalThis.crypto &&
+    typeof globalThis.crypto.randomUUID === 'function'
+      ? globalThis.crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(16).slice(2)}`
+  return `${schemaName}-${randomId}.db`
+}
+
 // ============================================================================
 // GLOBAL LOADING MANAGER - Ensures only one map loads at a time
 // ============================================================================
@@ -211,7 +221,7 @@ export async function attachDatabase(
   arrayBuffer: ArrayBuffer,
   schemaName: string
 ): Promise<void> {
-  const filename = `${schemaName}.db`
+  const filename = buildUniqueAttachmentName(schemaName)
   try {
     // Write buffer to virtual file system so SQLite can see it
     // SPL.js (based on various Emscripten builds) usually exposes FS or a helper

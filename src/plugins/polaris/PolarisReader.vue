@@ -27,7 +27,7 @@ const MyComponent = defineComponent({
   data() {
     const uid = `id-${Math.floor(1e12 * Math.random())}`
     return {
-      globalState: globalStore.state, vizDetails: {} as VizDetails, layerConfigs: {} as { [layerName: string]: LayerConfig }, loadingText: '', id: uid, layerId: `polaris-layer-${uid}`, polarisFileSystem: null as any, spl: null as any, db: null as any, dbPath: '' as string, tables: [] as Array<{ name: string; type: string; rowCount: number; columns: any[] }>, isLoaded: false, geoJsonFeatures: [] as any[], hasGeometry: false, bgLayers: null as BackgroundLayers | null, featureFilter: new Float32Array(), fillColors: new Uint8ClampedArray(), fillHeights: new Float32Array(), lineColors: new Uint8ClampedArray(), lineWidths: new Float32Array(), pointRadii: new Float32Array(), redrawCounter: 0, isRGBA: false, legendItems: [] as Array<{ label: string; color: string; value: any }>
+      globalState: globalStore.state, vizDetails: {} as VizDetails, layerConfigs: {} as { [layerName: string]: LayerConfig }, loadingText: '', id: uid, layerId: `polaris-layer-${uid}`, polarisFileSystem: null as any, spl: null as any, db: null as any, dbPath: '' as string, tables: [] as Array<{ name: string; type: string; rowCount: number; columns: any[] }>, isLoaded: false, geoJsonFeatures: [] as any[], hasGeometry: false, bgLayers: null as BackgroundLayers | null, featureFilter: new Float32Array(), fillColors: new Uint8ClampedArray(), fillHeights: new Float32Array(), lineColors: new Uint8ClampedArray(), lineWidths: new Float32Array(), pointRadii: new Float32Array(), redrawCounter: 0, isRGBA: false, legendItems: [] as Array<{ label: string; color: string; value: any }>, hasSignaledLoadComplete: false, hasAcquiredLoadingSlot: false
     }
   },
 
@@ -41,7 +41,7 @@ const MyComponent = defineComponent({
   },
   watch: { resize() { this.redrawCounter += 1 } },
 
-  beforeUnmount() { this.cleanupMemory(); mapLoadingComplete() },
+  beforeUnmount() { this.cleanupMemory(); this.signalLoadComplete() },
   async mounted() {
     let releaseSlot: (() => void) | null = null
     try {
@@ -49,6 +49,7 @@ const MyComponent = defineComponent({
       if (this.thumbnail) { this.$emit('isLoaded'); return }
       this.loadingText = 'Waiting for other maps to load...'
       releaseSlot = await acquireLoadingSlot()
+      this.hasAcquiredLoadingSlot = true
       await this.getVizDetails()
       await this.initBackgroundLayers()
       await this.loadDatabase()
@@ -61,11 +62,17 @@ const MyComponent = defineComponent({
       this.loadingText = `Error: ${err instanceof Error ? err.message : String(err)}`
     } finally {
       if (releaseSlot) releaseSlot()
+      this.signalLoadComplete()
       this.$emit('isLoaded')
     }
   },
 
   methods: {
+    signalLoadComplete(): void {
+      if (!this.hasAcquiredLoadingSlot || this.hasSignaledLoadComplete) return
+      mapLoadingComplete()
+      this.hasSignaledLoadComplete = true
+    },
     async initBackgroundLayers(): Promise<void> {
       try {
         if (!this.vizDetails) this.vizDetails = {} as VizDetails
