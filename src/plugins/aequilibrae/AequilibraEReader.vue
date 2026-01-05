@@ -13,7 +13,7 @@ import { i18n } from './i18n'
 import globalStore from '@/store'
 import { FileSystemConfig } from '@/Globals'
 import AequilibraEFileSystem from './AequilibraEFileSystem'
-import { initSql, openDb, releaseSql, releaseDb, acquireLoadingSlot, parseYamlConfig, buildTables, buildGeoFeatures, getTotalMapsLoading, mapLoadingComplete } from './useAequilibrae'
+import { initSql, openDb, releaseSql, releaseDb, acquireLoadingSlot, parseYamlConfig, buildTables, buildGeoFeatures, getTotalMapsLoading, mapLoadingComplete, getCachedGeometry, getCachedFileBuffer, hasCachedFile, getCachedFile } from './useAequilibrae'
 import { buildStyleArrays } from './styling'
 import DeckMapComponent from '@/plugins/shape-file/DeckMapComponent.vue'
 import LegendColors from '@/components/LegendColors.vue'
@@ -88,8 +88,15 @@ const MyComponent = defineComponent({
           throw new Error('No database path specified in configuration')
         }
 
-        const blob = await this.aeqFileSystem.getFileBlob(this.dbPath)
-        const arrayBuffer = await blob.arrayBuffer()
+        // Check cache first to avoid re-downloading from S3
+        let arrayBuffer: ArrayBuffer | null = getCachedFile(this.dbPath)
+        if (!arrayBuffer) {
+          const blob = await this.aeqFileSystem.getFileBlob(this.dbPath)
+          arrayBuffer = await blob.arrayBuffer()
+          arrayBuffer = getCachedFileBuffer(this.dbPath, arrayBuffer)
+        } else {
+          console.log(`✅ Using cached file: ${this.dbPath}`)
+        }
         
         // Pass path to enable database caching across multiple maps
         this.db = await openDb(this.spl, arrayBuffer, this.dbPath)
@@ -175,10 +182,19 @@ const MyComponent = defineComponent({
         
         try {
           this.loadingText = `Loading ${dbName} database...`
-          const blob = await this.aeqFileSystem.getFileBlob(path)
-          const arrayBuffer = await blob.arrayBuffer()
-          // Don't cache extra databases - they're used once and discarded
-          return await openDb(this.spl, arrayBuffer)
+          
+          // Check cache first to avoid re-downloading from S3
+          let arrayBuffer: ArrayBuffer | null = getCachedFile(path)
+          if (!arrayBuffer) {
+            const blob = await this.aeqFileSystem.getFileBlob(path)
+            arrayBuffer = await blob.arrayBuffer()
+            arrayBuffer = getCachedFileBuffer(path, arrayBuffer)
+          } else {
+            console.log(`✅ Using cached file: ${path}`)
+          }
+          
+          // Cache extra databases by passing the path - multiple panels may use the same results database
+          return await openDb(this.spl, arrayBuffer, path)
         } catch (error) {
           console.warn(`Failed to load extra database '${dbName}':`, error)
           return null
@@ -190,7 +206,8 @@ const MyComponent = defineComponent({
       Object.assign(this, { fillColors: styles.fillColors, lineColors: styles.lineColors, lineWidths: styles.lineWidths, pointRadii: styles.pointRadii, fillHeights: styles.fillHeights, featureFilter: styles.featureFilter, isRGBA: true, redrawCounter: this.redrawCounter + 1 })
     },
     releaseMainDatabase(): void {
-      if (this.dbPath) { releaseDb(this.dbPath); this.dbPath = '' }
+      // Don't release database - keep it cached for reuse by other panels
+      // since databases are expensive to fetch from S3
       this.db = null; this.tables = []
     },
     cleanupMemory(): void {

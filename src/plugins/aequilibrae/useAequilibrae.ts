@@ -130,6 +130,34 @@ interface CachedDb {
 
 const dbCache = new Map<string, CachedDb>()
 const dbLoadPromises = new Map<string, Promise<any>>()
+const fileCache = new Map<string, ArrayBuffer>()  // Cache file blobs to avoid re-downloading from S3
+
+/**
+ * Get a file blob, using cache if available to avoid re-downloading from S3
+ */
+export function getCachedFileBuffer(path: string, arrayBuffer: ArrayBuffer): ArrayBuffer {
+  if (fileCache.has(path)) {
+    console.log(`📦 Reusing cached file buffer: ${path}`)
+    return fileCache.get(path)!
+  }
+  fileCache.set(path, arrayBuffer)
+  console.log(`💾 Cached file buffer: ${path}`)
+  return arrayBuffer
+}
+
+/**
+ * Check if a file is cached without downloading
+ */
+export function hasCachedFile(path: string): boolean {
+  return fileCache.has(path)
+}
+
+/**
+ * Get cached file buffer if available
+ */
+export function getCachedFile(path: string): ArrayBuffer | null {
+  return fileCache.get(path) || null
+}
 
 /**
  * Open a database, using cache if available.
@@ -398,6 +426,34 @@ export async function buildGeoFeatures(
   // Format: "dbName:tableName:column" -> Map of join data
   const joinDataCache = new Map<string, Map<any, Record<string, any>>>()
   
+  // Centralized cache for geometry data
+  const geometryCache: Map<string, any> = new Map()
+
+  /**
+   * Fetch or generate geometry data for a given database and table.
+   * Uses a cache to avoid redundant computations.
+   *
+   * @param dbPath - Path to the SQLite database
+   * @param tableName - Name of the table to fetch geometry from
+   * @returns Cached or newly generated geometry data
+   */
+  async function getCachedGeometry(dbPath: string, tableName: string): Promise<any> {
+    const cacheKey = `${dbPath}::${tableName}`;
+
+    if (geometryCache.has(cacheKey)) {
+      console.log(`Using cached geometry for ${cacheKey}`);
+      return geometryCache.get(cacheKey);
+    }
+
+    console.log(`Generating geometry for ${cacheKey}`);
+    const db = await openDb(dbPath);
+    const geometry = await fetchGeoJSONFeatures(db, tableName);
+    geometryCache.set(cacheKey, geometry);
+    releaseDb(db);
+
+    return geometry;
+  }
+
   try {
     for (const [layerName, cfg] of layersToProcess as any) {
       const layerConfig = cfg as LayerConfig
@@ -476,17 +532,9 @@ export async function buildGeoFeatures(
       await new Promise(resolve => setTimeout(resolve, 50))
     }
   } finally {
-    // CRITICAL: Clean up all loaded extra databases
-    for (const [dbName, extraDb] of loadedExtraDbs) {
-      try {
-        if (extraDb && typeof extraDb.close === 'function') {
-          extraDb.close()
-          console.log(`🗑️ Closed extra database: ${dbName}`)
-        }
-      } catch (e) {
-        console.warn(`Failed to close extra database ${dbName}:`, e)
-      }
-    }
+    // NOTE: Do NOT close extra databases here - they are managed by the global database cache
+    // and may be reused by other panels. The openDb() function handles lifecycle management
+    // via refCount. Only the global cache's releaseDb() function should close databases.
     loadedExtraDbs.clear()
     
     // Clear join data cache

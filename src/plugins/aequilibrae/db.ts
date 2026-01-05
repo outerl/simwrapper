@@ -87,52 +87,56 @@ export function performJoin(
   joinData: Record<string, any>[],
   joinConfig: JoinConfig
 ): Record<string, any>[] {
-  // Build a lookup map for efficient joining using the right key
-  const joinLookup = new Map<any, Record<string, any>>()
+  const joinLookup = new Map<any, Record<string, any>>();
   for (const row of joinData) {
-    const key = row[joinConfig.rightKey]
+    const key = row[joinConfig.rightKey];
     if (key !== undefined && key !== null) {
-      joinLookup.set(key, row)
+      joinLookup.set(key, row);
     }
   }
 
-  const joinType = joinConfig.type || 'left'
-  const results: Record<string, any>[] = []
-
+  const results: Record<string, any>[] = [];
   for (const mainRow of mainData) {
-    const joinKey = mainRow[joinConfig.leftKey]
-    const joinRow = joinLookup.get(joinKey)
+    const joinKey = mainRow[joinConfig.leftKey];
+    const joinRow = joinLookup.get(joinKey);
 
     if (joinRow) {
-      // Filter columns if specified
-      let joinedColumns: Record<string, any>
-      if (joinConfig.columns && joinConfig.columns.length > 0) {
-        joinedColumns = {}
-        for (const col of joinConfig.columns) {
-          if (col in joinRow) {
-            joinedColumns[col] = joinRow[col]
-          }
-        }
-      } else {
-        // Include all columns from join table (except the join key to avoid duplicates)
-        joinedColumns = { ...joinRow }
-        // Optionally remove duplicate key if it has the same name
-        // We keep it for now as it might have different values
-      }
+      const joinedColumns = joinConfig.columns?.length
+        ? Object.fromEntries(
+            joinConfig.columns.map((col) => [col, joinRow[col]]).filter(([_, value]) => value !== undefined)
+          )
+        : { ...joinRow };
 
-      // Merge: main row properties take precedence, then add joined columns
-      results.push({
-        ...mainRow,
-        ...joinedColumns,
-      })
-    } else if (joinType === 'left') {
-      // No match found, but left join keeps the main row
-      results.push({ ...mainRow })
+      results.push({ ...mainRow, ...joinedColumns });
+    } else if (joinConfig.type === 'left') {
+      results.push({ ...mainRow });
     }
-    // For 'inner' join, skip rows with no match
   }
 
-  return results
+  return results;
+}
+
+// Cache for joinData
+const joinDataCache: Map<string, Map<any, Record<string, any>>> = new Map();
+
+/**
+ * Get cached joinData or load it if not cached
+ */
+async function getCachedJoinData(
+  db: any,
+  joinConfig: JoinConfig
+): Promise<Map<any, Record<string, any>>> {
+  const cacheKey = `${joinConfig.table}::${joinConfig.rightKey}::${joinConfig.filter || ''}`;
+
+  if (joinDataCache.has(cacheKey)) {
+    return joinDataCache.get(cacheKey)!;
+  }
+
+  const joinRows = await queryTable(db, joinConfig.table, joinConfig.columns, joinConfig.filter);
+  const joinData = new Map(joinRows.map((row) => [row[joinConfig.rightKey], row]));
+  joinDataCache.set(cacheKey, joinData);
+
+  return joinData;
 }
 
 /**
@@ -209,9 +213,12 @@ export async function fetchGeoJSONFeatures(
     minimalProperties?: boolean
   }
 ) {
-  const limit = options?.limit ?? 100000  // Default limit
+  const limit = options?.limit ?? 1000000  // Default limit
   const coordPrecision = options?.coordinatePrecision ?? 5
   const minimalProps = options?.minimalProperties ?? true
+
+  // Resolve joined data early so we can reuse the cached Map instead of rebuilding arrays per row
+  const cachedJoinedData = joinedData ?? (joinConfig ? await getCachedJoinData(db, joinConfig) : undefined)
   
   // Determine which columns we actually need
   const usedColumns = getUsedColumns(layerConfig)
@@ -310,13 +317,11 @@ export async function fetchGeoJSONFeatures(
         }
       }
 
-      // Merge joined data if available
-      if (joinedData && joinConfig) {
-        const joinKey = row[joinConfig.leftKey]
-        const joinRow = joinedData.get(joinKey)
+      // Merge joined data if available (Map lookup keeps this O(1) per row)
+      if (cachedJoinedData && joinConfig) {
+        const joinRow = cachedJoinedData.get(row[joinConfig.leftKey])
 
         if (joinRow) {
-          // Add joined columns to properties
           for (const [key, value] of Object.entries(joinRow)) {
             if (!(key in properties)) {
               properties[key] = value

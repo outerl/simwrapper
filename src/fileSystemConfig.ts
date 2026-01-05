@@ -139,7 +139,7 @@ let fileSystems: FileSystemConfig[] = [
     description: 'Example model using the AequilibraE plugin',
     thumbnail: 'images/thumb-localfiles.jpg',
     example: true,
-    baseURL: 'https://aequilibrae-simwrapper-demo.s3.amazonaws.com/',
+    baseURL: 'https://qfm-ojagydsq.s3.amazonaws.com/',
     isS3: true,
   },
   {
