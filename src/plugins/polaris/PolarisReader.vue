@@ -2,7 +2,6 @@
 .c-polaris-viewer.flex-col(:class="{'is-thumbnail': thumbnail, 'is-dashboard': itemType === 'dashboard', 'is-map-view': itemType === 'map'}")
   .loading(v-if="!isLoaded") {{ loadingText }}
   .dashboard(v-if="isLoaded && showDashboard && dashboardSections.length")
-    h3(v-if="dashboardTitle") {{ dashboardTitle }}
     .dashboard-section(v-for="section in dashboardSections" :key="section.name")
       h4 {{ section.name }}
       .dashboard-cards
@@ -392,8 +391,8 @@ const MyComponent = defineComponent({
           if (detected.result && !databases.result) databases.result = this.resolvePath(detected.result)
         }
         
-        // Handle simwrapper as array (new format) or object (legacy format)
-        if (Array.isArray(simwrapper)) {
+        // Handle webpolaris as array (new format) or object (legacy format)
+        if (Array.isArray(webpolaris)) {
           // New array format: merge all items into vizDetails
           this.vizDetails = {
             title: 'POLARIS Model',
@@ -405,7 +404,7 @@ const MyComponent = defineComponent({
           } as any
           
           // Process each item in the array
-          for (const item of simwrapper) {
+          for (const item of webpolaris) {
             if (item.type === 'dashboard' && item.sections) {
               this.vizDetails.dashboard = {
                 title: item.item || item.title,
@@ -433,7 +432,7 @@ const MyComponent = defineComponent({
           }
         } else {
           // Legacy object format
-          this.vizDetails = buildVizDetails(simwrapper || {}, scenario, this.subfolder, databases)
+          this.vizDetails = buildVizDetails(webpolaris || {}, scenario, this.subfolder, databases)
           this.layerConfigs = this.vizDetails.layers || {}
         }
       } catch (error) {
