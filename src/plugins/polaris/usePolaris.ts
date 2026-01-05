@@ -343,6 +343,7 @@ export function buildVizDetails(
     minimalProperties: simwrapperConfig.minimalProperties,
     defaults: simwrapperConfig.defaults,
     legend: simwrapperConfig.legend,
+    dashboard: simwrapperConfig.dashboard,
     analysisIteration: scenarioConfig?.analysis_iteration
   }
 }

@@ -41,6 +41,17 @@ export interface LayerConfig {
   style?: LayerStyle
 }
 
+export interface DashboardMetric {
+  label: string
+  query: string
+  db?: string
+}
+
+export interface DashboardSection {
+  name: string
+  metrics: DashboardMetric[]
+}
+
 /**
  * SimWrapper section within polaris.yaml
  * Defines visualization settings for POLARIS model output
@@ -91,6 +102,10 @@ export interface PolarisSimwrapperConfig {
     shape?: string
     subtitle?: string
   }>
+  /** Dashboard configuration (cards) */
+  dashboard?: {
+    sections?: DashboardSection[]
+  }
   /** Memory optimization: Max features per layer (default: 100000) */
   geometryLimit?: number
   /** Memory optimization: Coordinate decimal precision (default: 5 = ~1m) */
@@ -163,6 +178,10 @@ export interface VizDetails {
     shape?: string
     subtitle?: string
   }>
+  /** Dashboard configuration (cards) */
+  dashboard?: {
+    sections?: DashboardSection[]
+  }
   /** Analysis iteration to use */
   analysisIteration?: number
 }
