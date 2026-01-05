@@ -9,6 +9,7 @@
  * @author SimWrapper Development Team
  */
 
+import proj4 from 'proj4'
 import type { LayerConfig } from './types'
 
 /**
@@ -122,6 +123,81 @@ function getUsedColumns(layerConfig: any): Set<string> {
   return used
 }
 
+type ProjectionInfo = {
+  srid: number | null
+  transform: ((xy: [number, number]) => [number, number]) | null
+}
+
+const tableProjectionCache = new Map<string, ProjectionInfo>()
+
+async function lookupTableSrid(db: any, tableName: string): Promise<number | null> {
+  try {
+    const rows = await db.exec(
+      `SELECT srid FROM geometry_columns WHERE lower(f_table_name) = lower('${tableName}') LIMIT 1;`
+    ).get.objs
+    return rows?.[0]?.srid ?? null
+  } catch (err) {
+    return null
+  }
+}
+
+async function lookupProjectionDefinition(db: any, srid: number): Promise<string | null> {
+  try {
+    const rows = await db.exec(
+      `SELECT proj4text, srtext FROM spatial_ref_sys WHERE srid = ${srid} LIMIT 1;`
+    ).get.objs
+    if (!rows || rows.length === 0) return null
+    return rows[0].proj4text || rows[0].srtext || null
+  } catch (err) {
+    return null
+  }
+}
+
+function transformCoordinates(
+  coords: any,
+  transform: (xy: [number, number]) => [number, number]
+): any {
+  if (!coords || !Array.isArray(coords)) return coords
+  if (coords.length > 0 && typeof coords[0] === 'number') {
+    const [x, y, ...rest] = coords
+    const [tx, ty] = transform([x as number, y as number])
+    return [tx, ty, ...rest]
+  }
+  return coords.map((c: any) => transformCoordinates(c, transform))
+}
+
+async function getProjectionForTable(db: any, tableName: string): Promise<ProjectionInfo> {
+  const cached = tableProjectionCache.get(tableName)
+  if (cached) return cached
+
+  const srid = await lookupTableSrid(db, tableName)
+  if (!srid || srid === 4326) {
+    const info = { srid: srid ?? null, transform: null }
+    tableProjectionCache.set(tableName, info)
+    return info
+  }
+
+  const definition = await lookupProjectionDefinition(db, srid)
+  if (!definition) {
+    const info = { srid, transform: null }
+    tableProjectionCache.set(tableName, info)
+    return info
+  }
+
+  let transform: ProjectionInfo['transform'] = null
+  try {
+    const sourceProj = proj4(definition)
+    const destProj = proj4.WGS84
+    transform = (xy: [number, number]) => proj4(sourceProj, destProj, xy as any) as [number, number]
+  } catch (err) {
+    transform = null
+  }
+
+  const info = { srid, transform }
+  tableProjectionCache.set(tableName, info)
+  return info
+}
+
 /**
  * Fetch GeoJSON features from a table
  * Memory-optimized: only stores essential properties and simplifies coordinates
@@ -182,6 +258,8 @@ export async function fetchGeoJSONFeatures(
     filterClause += ` AND (${layerConfig.sqlFilter})`
   }
 
+  const projection = await getProjectionForTable(db, table.name)
+
   const query = `
     SELECT ${columnNames},
            AsGeoJSON(geo) as geojson_geom,
@@ -230,6 +308,10 @@ export async function fetchGeoJSONFeatures(
         geometry = typeof row.geojson_geom === 'string' 
           ? JSON.parse(row.geojson_geom) 
           : row.geojson_geom
+
+        if (geometry.coordinates && projection.transform) {
+          geometry.coordinates = transformCoordinates(geometry.coordinates, projection.transform)
+        }
         
         if (geometry.coordinates && coordPrecision < 15) {
           geometry.coordinates = simplifyCoordinates(geometry.coordinates, coordPrecision)
