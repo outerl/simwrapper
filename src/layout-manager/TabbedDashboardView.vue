@@ -15,14 +15,14 @@
         :style="{opacity: tab===activeTab ? 1.0 : 0.75}"
         @click="switchLeftTab(tab,index)"
       )
-        a(v-if="dashboards[tab].header"
+        a(v-if="dashboards[tab]?.header"
           @click="switchLeftTab(tab,index)"
-        ) {{ dashboards[tab].header.tab }}
+        ) {{ dashboards[tab]?.header?.tab || tab }}
 
     //- mobile: dashboard dropdown-button
     .dashboard-mobile-section(v-show="!isZoomed && Object.keys(dashboards).length > 1 && isMobile")
       .dropdown
-        b-button.dropbtn(@click="dropDownClicked()") {{ dashboards[activeTab].header.tab || 'Dashboards' }}
+        b-button.dropbtn(@click="dropDownClicked()") {{ dashboards[activeTab]?.header?.tab || 'Dashboards' }}
           i.fa.fa-caret-down
 
         .dropdown-content(v-if="showDropDown")
@@ -31,11 +31,11 @@
             :style="{opacity: tab===activeTab ? 1.0 : 0.75}"
             @click="switchLeftTab(tab,index)"
           )
-            a(v-if="dashboards[tab].header" @click="switchLeftTab(tab,index)") {{ dashboards[tab].header.tab }}
+            a(v-if="dashboards[tab]?.header" @click="switchLeftTab(tab,index)") {{ dashboards[tab]?.header?.tab || tab }}
 
     //-- The actual dashboard for this tab (if there is one) ------------------
     .dashboard-content(
-      v-if="dashboardTabWithDelay && dashboardTabWithDelay !== 'FILE__BROWSER' && dashboards[dashboardTabWithDelay] && dashboards[dashboardTabWithDelay].header.tab !== '...'"
+      v-if="dashboardTabWithDelay && dashboardTabWithDelay !== 'FILE__BROWSER' && dashboards[dashboardTabWithDelay] && dashboards[dashboardTabWithDelay].header && dashboards[dashboardTabWithDelay].header.tab !== '...'"
       :class="{'is-breadcrumbs-hidden': !isShowingBreadcrumbs && !isZoomed}"
     )
       dash-board(
@@ -103,7 +103,7 @@ export default defineComponent({
       allConfigFiles: { dashboards: {}, topsheets: {}, vizes: {}, configs: {} } as YamlConfigs,
       crumbs: [] as any,
       customCSS: '',
-      dashboards: [] as any[],
+      dashboards: {} as Record<string, any>,
       dashboardDataManager: null as DashboardDataManager | null,
       dashboardTabWithDelay: '',
       finalFolder: '',
@@ -290,24 +290,36 @@ export default defineComponent({
         }
 
         // // Start on correct tab
-        const dashboardKeys = Object.keys(this.dashboards)
-        if (this.$route.query.tab) {
-          if (this.$route.query.tab === 'files') {
-            this.activeTab = 'FILE__BROWSER'
-          } else {
-            try {
-              const userSupplied = parseInt('' + this.$route.query.tab) - 1
-              const userTab = dashboardKeys[userSupplied]
-              this.activeTab = userTab || dashboardKeys[0]
-            } catch (e) {
-              // user spam; just use first tab
-              this.activeTab = dashboardKeys[0]
-            }
-          }
-        } else {
-          this.activeTab = dashboardKeys[0]
+        let dashboardKeys = Object.keys(this.dashboards)
+
+        // If nothing to show, prefer Files tab when available
+        if (!dashboardKeys.length && this.globalState.isShowingFilesTab) {
+          Vue.set(this.dashboards, 'FILE__BROWSER', { header: { tab: 'Files' } })
+          dashboardKeys = Object.keys(this.dashboards)
         }
-        this.dashboardTabWithDelay = this.activeTab
+
+        if (dashboardKeys.length) {
+          if (this.$route.query.tab) {
+            if (this.$route.query.tab === 'files') {
+              this.activeTab = 'FILE__BROWSER'
+            } else {
+              try {
+                const userSupplied = parseInt('' + this.$route.query.tab) - 1
+                const userTab = dashboardKeys[userSupplied]
+                this.activeTab = userTab || dashboardKeys[0]
+              } catch (e) {
+                this.activeTab = dashboardKeys[0]
+              }
+            }
+          } else {
+            this.activeTab = dashboardKeys[0]
+          }
+          this.dashboardTabWithDelay = this.activeTab
+        } else {
+          // no dashboards and no files: keep empty but avoid render crashes
+          this.activeTab = ''
+          this.dashboardTabWithDelay = ''
+        }
       } catch (e) {
         // Bad things happened! Tell user
         console.warn({ eeee: e })

@@ -147,6 +147,11 @@ const plugins = [
     kebabName: "aeq-reader",
     filePatterns: ['**/aeqviz-*.y?(a)ml'],
     component: defineAsyncComponent(() => import('./aequilibrae/AequilibraEReader.vue')),
+  },
+  {
+    kebabName: "polaris-reader",
+    filePatterns: ['**/polaris.y?(a)ml'],
+    component: defineAsyncComponent(() => import('@/dash-panels/polaris.vue')),
   }
 ]
 
