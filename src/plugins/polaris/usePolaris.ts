@@ -331,6 +331,7 @@ export function buildVizDetails(
     bearing: simwrapperConfig.bearing,
     pitch: simwrapperConfig.pitch,
     showMap: simwrapperConfig.showMap,
+    filters: simwrapperConfig.filters,
     geometryLimit: simwrapperConfig.geometryLimit,
     coordinatePrecision: simwrapperConfig.coordinatePrecision,
     minimalProperties: simwrapperConfig.minimalProperties,
@@ -384,7 +385,8 @@ export async function buildGeoFeatures(
   db: any,
   tables: any[],
   layerConfigs: { [k: string]: LayerConfig },
-  options?: GeoFeatureOptions
+  options?: GeoFeatureOptions,
+  filterConfigs?: any[]
 ) {
   const plain = JSON.parse(JSON.stringify(layerConfigs))
   const layersToProcess = Object.keys(plain).length
@@ -407,7 +409,8 @@ export async function buildGeoFeatures(
       table,
       layerName,
       cfg,
-      options
+      options,
+      filterConfigs
     )
 
     for (let i = 0; i < layerFeatures.length; i++) {

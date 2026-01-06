@@ -8,8 +8,15 @@
         .dashboard-card(v-for="row in section.rows" :key="row.label" :class="{'is-alt': (section.rows.indexOf(row) % 2) === 1}")
           .card-label {{ row.label }}
           .card-value {{ row.value }}
-  .map-viewer(v-if="showMap && isLoaded")
-    DeckMapComponent(ref="deckMap" v-if="geoJsonFeatures.length && bgLayers && layerId" :features="geoJsonFeatures" :bgLayers="bgLayers" :cbTooltip="handleTooltip" :cbClickEvent="handleFeatureClick" :dark="globalState.isDarkMode" :featureFilter="featureFilter" :fillColors="fillColors" :fillHeights="fillHeights" :highlightedLinkIndex="-1" :initialView="null" :isRGBA="isRGBA" :isAtlantis="false" :lineColors="lineColors" :lineWidths="lineWidths" :mapIsIndependent="false" :opacity="1" :pointRadii="pointRadii" :redraw="redrawCounter" :screenshot="0" :viewId="layerId" :lineWidthUnits="'meters'" :pointRadiusUnits="'meters'")
+  .map-viewer(v-if="showMap && isLoaded" :style="mapViewerStyle")
+    .filter-panel(v-if="filterConfigs.length")
+      .filter-controls
+        .filter-item(v-for="filter in filterConfigs" :key="filter.column")
+          label.filter-label {{ filter.label || filter.column }}
+          select.filter-select(v-model="activeFilters[filter.column]" @change="applyFilters")
+            option(:value="null") All
+            option(v-for="value in filterValues[filter.column]" :key="value" :value="value") {{ value }}
+    DeckMapComponent(ref="deckMap" v-if="geoJsonFeatures.length && bgLayers && layerId" :features="geoJsonFeatures" :bgLayers="bgLayers" :cbTooltip="handleTooltip" :cbClickEvent="handleFeatureClick" :dark="globalState.isDarkMode" :featureFilter="filterData.featureFilter" :fillColors="fillColors" :fillHeights="fillHeights" :highlightedLinkIndex="-1" :initialView="null" :isRGBA="isRGBA" :isAtlantis="false" :lineColors="lineColors" :lineWidths="lineWidths" :mapIsIndependent="false" :opacity="1" :pointRadii="pointRadii" :redraw="redrawCounter" :filterUpdateTrigger="filterUpdateCounter" :screenshot="0" :viewId="layerId" :lineWidthUnits="'meters'" :pointRadiusUnits="'meters'")
     .legend-overlay(v-if="legendItems.length" :style="{background: legendBgColor}")
       LegendColors(:items="legendItems" title="Legend")
 </template>
@@ -25,7 +32,7 @@ import { buildStyleArrays, getPaletteColors } from './styling'
 import DeckMapComponent from '@/plugins/shape-file/DeckMapComponent.vue'
 import LegendColors from '@/components/LegendColors.vue'
 import BackgroundLayers from '@/js/BackgroundLayers'
-import type { LayerConfig, VizDetails } from './types'
+import type { LayerConfig, VizDetails, FilterConfig } from './types'
 
 const MyComponent = defineComponent({
   name: 'PolarisReader', i18n,
@@ -34,7 +41,9 @@ const MyComponent = defineComponent({
   data() {
     const uid = `id-${Math.floor(1e12 * Math.random())}`
     return {
-      globalState: globalStore.state, vizDetails: {} as VizDetails, layerConfigs: {} as { [layerName: string]: LayerConfig }, loadingText: '', id: uid, layerId: `polaris-layer-${uid}`, polarisFileSystem: null as any, spl: null as any, db: null as any, dbPath: '' as string, tables: [] as Array<{ name: string; type: string; rowCount: number; columns: any[] }>, isLoaded: false, geoJsonFeatures: [] as any[], hasGeometry: false, bgLayers: null as BackgroundLayers | null, featureFilter: new Float32Array(), fillColors: new Uint8ClampedArray(), fillHeights: new Float32Array(), lineColors: new Uint8ClampedArray(), lineWidths: new Float32Array(), pointRadii: new Float32Array(), redrawCounter: 0, isRGBA: false, legendItems: [] as Array<{ label: string; color: string; value: any }>, hasSignaledLoadComplete: false, hasAcquiredLoadingSlot: false, attachments: [] as Array<{ schema: string; filename: string }>, dashboardSections: [] as Array<{ name: string; rows: Array<{ label: string; value: any }> }>, metricDbs: {} as Record<string, { db: any; path: string }>
+      globalState: globalStore.state, vizDetails: {} as VizDetails, layerConfigs: {} as { [layerName: string]: LayerConfig }, loadingText: '', id: uid, layerId: `polaris-layer-${uid}`, polarisFileSystem: null as any, spl: null as any, db: null as any, dbPath: '' as string, tables: [] as Array<{ name: string; type: string; rowCount: number; columns: any[] }>, isLoaded: false, geoJsonFeatures: [] as any[], hasGeometry: false, bgLayers: null as BackgroundLayers | null, filterData: { featureFilter: new Float32Array() }, fillColors: new Uint8ClampedArray(), fillHeights: new Float32Array(), lineColors: new Uint8ClampedArray(), lineWidths: new Float32Array(), pointRadii: new Float32Array(), redrawCounter: 0, filterUpdateCounter: 0, isRGBA: false, legendItems: [] as Array<{ label: string; color: string; value: any }>, hasSignaledLoadComplete: false, hasAcquiredLoadingSlot: false, attachments: [] as Array<{ schema: string; filename: string }>, dashboardSections: [] as Array<{ name: string; rows: Array<{ label: string; value: any }> }>, metricDbs: {} as Record<string, { db: any; path: string }>, filterConfigs: [] as FilterConfig[], activeFilters: {} as Record<string, any>, filterValues: {} as Record<string, any[]>,
+      // Multi-map support: store each webpolaris map item separately
+      webpolarisMaps: [] as Array<{ item: string; height?: number; layers: any; layerConfigs: any; filters?: FilterConfig[] }>,
     }
   },
 
@@ -61,7 +70,15 @@ const MyComponent = defineComponent({
     dashboardTitle(): string {
       return this.config?.title || this.config?.item || this.vizDetails?.dashboard?.title || ''
     },
-    legendBgColor(): string { return this.globalState.isDarkMode ? 'rgba(32,32,32,0.95)' : 'rgba(255,255,255,0.95)' }
+    legendBgColor(): string { return this.globalState.isDarkMode ? 'rgba(32,32,32,0.95)' : 'rgba(255,255,255,0.95)' },
+    mapViewerStyle(): any {
+      // Apply height from config if specified (height * 60 = pixels)
+      if (this.config?.height) {
+        const heightPx = this.config.height * 60
+        return { minHeight: `${heightPx}px`, height: `${heightPx}px` }
+      }
+      return {}
+    },
   },
   watch: { resize() { this.redrawCounter += 1 } },
 
@@ -189,7 +206,8 @@ const MyComponent = defineComponent({
           this.db,
           this.tables,
           this.layerConfigs,
-          memoryOptions
+          memoryOptions,
+          this.filterConfigs
         )
 
         if (!this.vizDetails.center) {
@@ -204,6 +222,11 @@ const MyComponent = defineComponent({
         await new Promise(resolve => setTimeout(resolve, 10))
 
         this.geoJsonFeatures = markRaw(features)
+        
+        // Extract filter values after features are loaded
+        if (this.filterConfigs.length) {
+          this.extractFilterValues()
+        }
         
         const styles = buildStyleArrays({
           features: this.geoJsonFeatures,
@@ -228,6 +251,72 @@ const MyComponent = defineComponent({
     applyStyles(styles: ReturnType<typeof buildStyleArrays>): void {
       Object.assign(this, { fillColors: styles.fillColors, lineColors: styles.lineColors, lineWidths: styles.lineWidths, pointRadii: styles.pointRadii, fillHeights: styles.fillHeights, featureFilter: styles.featureFilter, isRGBA: true, redrawCounter: this.redrawCounter + 1 })
     },
+    
+    extractFilterValues(): void {
+      // Extract unique values for each filter column from the geoJsonFeatures
+      const newFilterValues: Record<string, any[]> = {}
+      
+      for (const filter of this.filterConfigs) {
+        const values = new Set<any>()
+        
+        for (const feature of this.geoJsonFeatures) {
+          const value = feature?.properties?.[filter.column]
+          if (value !== null && value !== undefined) {
+            values.add(value)
+          }
+        }
+        
+        // Sort values for consistent display
+        const sortedValues = Array.from(values).sort((a, b) => {
+          if (typeof a === 'number' && typeof b === 'number') return a - b
+          return String(a).localeCompare(String(b))
+        })
+        
+        newFilterValues[filter.column] = sortedValues
+        
+        // Initialize activeFilters to null (showing all)
+        if (!(filter.column in this.activeFilters)) {
+          this.activeFilters[filter.column] = null
+        }
+      }
+      
+      this.filterValues = newFilterValues
+    },
+    
+    applyFilters(): void {
+      // Update featureFilter based on active filters
+      const newFilter = new Float32Array(this.geoJsonFeatures.length)
+      
+      for (let i = 0; i < this.geoJsonFeatures.length; i++) {
+        const feature = this.geoJsonFeatures[i]
+        const props = feature?.properties
+        
+        // Check if feature matches all active filters
+        let matches = true
+        for (const [column, selectedValue] of Object.entries(this.activeFilters)) {
+          if (selectedValue === null || selectedValue === undefined) continue
+          
+          const featureValue = props?.[column]
+          // Convert both to strings for comparison to handle type mismatches
+          const featureValueStr = String(featureValue)
+          const selectedValueStr = String(selectedValue)
+          
+          if (featureValueStr !== selectedValueStr) {
+            matches = false
+            break
+          }
+        }
+        
+        newFilter[i] = matches ? 1 : -1
+      }
+      
+      // Update featureFilter via Vue's $set to ensure reactivity
+      this.$set(this.filterData, 'featureFilter', newFilter)
+      this.redrawCounter += 1
+      this.filterUpdateCounter += 1
+      this.$forceUpdate()
+    },
+    
     computeMapCenter(features: any[]): [number, number] | null {
       // Use all features to compute bounding box center
       if (!features.length) return null
@@ -315,7 +404,18 @@ const MyComponent = defineComponent({
         // For map type, extract layer configs
         if (this.itemType === 'map' && this.config.layers) {
           this.layerConfigs = {}
-          for (const [layerName, layerDef] of Object.entries(this.config.layers)) {
+          const layersObj = this.config.layers as any
+          
+          // First extract filters if they exist in the layers object
+          if (layersObj.filters && Array.isArray(layersObj.filters)) {
+            this.filterConfigs = layersObj.filters
+          }
+          
+          // Then process actual layers (skip the filters entry)
+          for (const [layerName, layerDef] of Object.entries(layersObj)) {
+            // Skip the filters entry
+            if (layerName === 'filters') continue
+            
             const def = layerDef as any
             const styleObj = def.style || def
             
@@ -338,6 +438,11 @@ const MyComponent = defineComponent({
               }
             }
           }
+        }
+        
+        // Also check for top-level filters config (alternative structure)
+        if (!this.filterConfigs.length && this.config.filters && Array.isArray(this.config.filters)) {
+          this.filterConfigs = this.config.filters
         }
         
         // Auto-detect databases if not specified
@@ -399,7 +504,7 @@ const MyComponent = defineComponent({
         
         // Handle webpolaris as array (new format) or object (legacy format)
         if (Array.isArray(webpolaris)) {
-          // New array format: merge all items into vizDetails
+          // New array format: store each map item separately for multi-map rendering
           this.vizDetails = {
             title: 'POLARIS Model',
             description: '',
@@ -408,6 +513,9 @@ const MyComponent = defineComponent({
             resultDatabase: databases.result,
             layers: {},
           } as any
+          
+          // Clear webpolarisMaps and process each item
+          this.webpolarisMaps = []
           
           // Process each item in the array
           for (const item of webpolaris) {
@@ -418,7 +526,24 @@ const MyComponent = defineComponent({
               }
             }
             if (item.type === 'map' && item.layers) {
-              for (const [layerName, layerDef] of Object.entries(item.layers)) {
+              const itemLayers = item.layers as any
+              const mapLayerConfigs: any = {}
+              let itemFilters: FilterConfig[] = []
+              
+              // Extract filters if they exist
+              if (itemLayers.filters && Array.isArray(itemLayers.filters)) {
+                itemFilters = itemLayers.filters
+                // For backward compatibility, use first map's filters
+                if (!this.filterConfigs.length) {
+                  this.filterConfigs = itemLayers.filters
+                }
+              }
+              
+              // Process layers (skip the filters entry)
+              for (const [layerName, layerDef] of Object.entries(itemLayers)) {
+                // Skip the filters entry
+                if (layerName === 'filters') continue
+                
                 const def = layerDef as any
                 const styleObj = def.style || def
                 
@@ -429,18 +554,31 @@ const MyComponent = defineComponent({
                 const pointRadius = styleObj.radius ?? styleObj.pointRadius
                 
                 // Map shorthand YAML keys to standard layer config keys
-                this.layerConfigs[layerName] = {
+                const layerConfig = {
                   table: styleObj.table || layerName,
                   type: styleObj.type,
                   style: {
-                    // Preserve objects as-is (for quantitative/categorical configs)
                     lineColor: lineColor,
                     lineWidth: lineWidth,
                     fillColor: fillColor,
                     pointRadius: pointRadius,
                   }
                 }
+                
+                mapLayerConfigs[layerName] = layerConfig
+                // Also add to main layerConfigs for backward compatibility
+                this.layerConfigs[layerName] = layerConfig
               }
+              
+              // Store this map item with its own height and layer configs
+              this.webpolarisMaps.push({
+                item: item.item || item.title || `Map ${this.webpolarisMaps.length + 1}`,
+                height: item.height,
+                layers: item.layers,
+                layerConfigs: mapLayerConfigs,
+                filters: itemFilters,
+              })
+              
               this.vizDetails.layers = this.layerConfigs
             }
           }
@@ -802,6 +940,61 @@ export default MyComponent
   font-weight: 600;
   color: var(--textFancy, #111);
 }
+
+.filter-panel {
+  padding: 0.75rem;
+  background: var(--bgPanel, #f5f5f5);
+  border-bottom: 1px solid var(--borderColor, #e0e0e0);
+  position: relative;
+  z-index: 100;
+}
+
+.filter-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.filter-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  position: relative;
+  z-index: 101;
+}
+
+.filter-label {
+  font-weight: 500;
+  font-size: 0.875rem;
+  color: var(--textFancy, #333);
+  white-space: nowrap;
+}
+
+.filter-select {
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--borderColor, #ccc);
+  border-radius: 4px;
+  background: white;
+  color: var(--textFancy, #333);
+  font-size: 0.875rem;
+  cursor: pointer;
+  position: relative;
+  z-index: 102;
+  
+  &:hover {
+    border-color: var(--accentColor, #0066cc);
+    z-index: 103;
+  }
+  
+  &:focus {
+    outline: none;
+    border-color: var(--accentColor, #0066cc);
+    box-shadow: 0 0 0 2px rgba(0, 102, 204, 0.1);
+    z-index: 103;
+  }
+}
+
 </style>
 
 <!-- Global style for DeckGL tooltip to prevent flickering/interaction blocking -->

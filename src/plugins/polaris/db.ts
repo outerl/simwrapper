@@ -106,20 +106,32 @@ function simplifyCoordinates(coords: any, precision: number = 6): any {
 }
 
 /**
- * Identify columns that are actually used for styling in the layer config
+ * Identify columns that are actually used for styling or filtering in the layer config
  */
-function getUsedColumns(layerConfig: any): Set<string> {
+function getUsedColumns(layerConfig: any, filterConfigs?: any[]): Set<string> {
   const used = new Set<string>()
-  if (!layerConfig?.style) return used
   
-  const style = layerConfig.style
-  const styleProps = ['fillColor', 'lineColor', 'lineWidth', 'pointRadius', 'fillHeight', 'filter']
-  for (const prop of styleProps) {
-    const cfg = style[prop]
-    if (cfg && typeof cfg === 'object' && 'column' in cfg) {
-      used.add(cfg.column)
+  // Add columns used for styling
+  if (layerConfig?.style) {
+    const style = layerConfig.style
+    const styleProps = ['fillColor', 'lineColor', 'lineWidth', 'pointRadius', 'fillHeight', 'filter']
+    for (const prop of styleProps) {
+      const cfg = style[prop]
+      if (cfg && typeof cfg === 'object' && 'column' in cfg) {
+        used.add(cfg.column)
+      }
     }
   }
+  
+  // Add columns used for filtering
+  if (filterConfigs && Array.isArray(filterConfigs)) {
+    for (const filter of filterConfigs) {
+      if (filter.column) {
+        used.add(filter.column)
+      }
+    }
+  }
+  
   return used
 }
 
@@ -206,6 +218,7 @@ async function getProjectionForTable(db: any, tableName: string): Promise<Projec
  * @param layerName - Name of the layer for feature properties
  * @param layerConfig - Layer configuration
  * @param options - Optional settings for memory optimization
+ * @param filterConfigs - Optional filter configurations (to ensure filter columns are included)
  */
 export async function fetchGeoJSONFeatures(
   db: any,
@@ -216,13 +229,14 @@ export async function fetchGeoJSONFeatures(
     limit?: number
     coordinatePrecision?: number
     minimalProperties?: boolean
-  }
+  },
+  filterConfigs?: any[]
 ) {
   const limit = options?.limit ?? 100000
   const coordPrecision = options?.coordinatePrecision ?? 5
   const minimalProps = options?.minimalProperties ?? true
   
-  const usedColumns = getUsedColumns(layerConfig)
+  const usedColumns = getUsedColumns(layerConfig, filterConfigs)
   
   // Build column list - either all columns or just the ones we need
   let columnNames: string

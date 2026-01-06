@@ -34,6 +34,7 @@ export default defineComponent({
     cbClickEvent: { type: Function, required: true },
     dark: { type: Boolean, required: true },
     featureFilter: { type: Float32Array, required: true },
+    filterUpdateTrigger: { type: Number, required: false, default: 0 },
     fillColors: { type: [String, Uint8ClampedArray], required: true }, //  = '#59a14f' as string | Uint8Array,
     fillHeights: { type: [Number, Float32Array], required: true }, //  = 0 as number | Float32Array,
     highlightedLinkIndex: { type: Number },
@@ -114,6 +115,22 @@ export default defineComponent({
         )
         this.mymap?.jumpTo(jump)
       }
+    },
+
+    redraw() {
+      // When redraw counter changes, update deck.gl layers to re-render
+      if (!this.deckOverlay) return
+      this.deckOverlay.setProps({
+        layers: this.layers,
+      })
+    },
+
+    featureFilter() {
+      // When featureFilter changes, also update layers
+      if (!this.deckOverlay) return
+      this.deckOverlay.setProps({
+        layers: this.layers,
+      })
     },
   },
 
@@ -345,7 +362,7 @@ export default defineComponent({
               getLineWidth: this.lineWidths,
               getPointRadius: this.pointRadii,
               getElevation: this.fillHeights,
-              getFilterValue: this.featureFilter,
+              getFilterValue: [this.featureFilter, this.filterUpdateTrigger],
             },
             transitions: {
               getFillColor: 300,

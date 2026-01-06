@@ -4,7 +4,7 @@
   .error(v-else-if="loadError") {{ loadError }}
   .polaris-scroll-content(v-else)
     //- Render items in YAML order
-    .polaris-item(v-for="(item, idx) in displayItems" :key="idx" :class="{'is-map': item.type === 'map'}")
+    .polaris-item(v-for="(item, idx) in displayItems" :key="idx" :class="{'is-map': item.type === 'map'}" :style="getItemStyle(item)")
       .polaris-item-title(v-if="item.title") {{ item.title }}
       polaris-reader(
         :root="rootSlug"
@@ -59,7 +59,7 @@ export default defineComponent({
     rootSlug(): string {
       return this.fsConfig?.slug || this.root || ''
     },
-    displayItems(): Array<{ title?: string; subfolder: string; config: any; type: string }> {
+    displayItems(): Array<{ title?: string; subfolder: string; config: any; type: string; height?: number }> {
       // Use loadedItems if we loaded from YAML, otherwise use config prop
       const items = this.loadedItems.length ? this.loadedItems : (Array.isArray(this.config) ? this.config : [])
       return items.map((item: any) => ({
@@ -67,7 +67,21 @@ export default defineComponent({
         type: item.type || 'dashboard',
         subfolder: item.subfolder || this.subfolder,
         config: { ...item },
+        height: item.height,
       }))
+    },
+  },
+  methods: {
+    getItemStyle(item: { type: string; height?: number }): any {
+      // For map items, apply height from config (height * 60 = pixels)
+      if (item.type === 'map' && item.height) {
+        const heightPx = item.height * 60
+        return { height: `${heightPx}px`, minHeight: `${heightPx}px` }
+      }
+      return {}
+    },
+    isLoaded() {
+      this.$emit('isLoaded')
     },
   },
   async mounted() {
@@ -101,11 +115,6 @@ export default defineComponent({
       this.loadError = `Failed to load polaris.yaml: ${e}`
       this.isLoading = false
     }
-  },
-  methods: {
-    isLoaded() {
-      this.$emit('isLoaded')
-    },
   },
 })
 </script>
@@ -155,8 +164,9 @@ export default defineComponent({
 }
 
 .polaris-item.is-map {
+  /* Default height, can be overridden by inline :style binding */
   height: 450px;
-  min-height: 400px;
+  min-height: 360px;
 }
 
 .polaris-item-title {

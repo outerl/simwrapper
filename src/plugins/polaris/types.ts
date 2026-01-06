@@ -41,6 +41,13 @@ export interface LayerConfig {
   style?: LayerStyle
 }
 
+export interface FilterConfig {
+  /** Column name to filter by */
+  column: string
+  /** Display label for the filter dropdown */
+  label?: string
+}
+
 export interface DashboardMetric {
   label: string
   query: string
@@ -84,6 +91,8 @@ export interface PolarisSimwrapperConfig {
   bearing?: number
   /** Map pitch/tilt in degrees */
   pitch?: number
+  /** Filter configurations for the map */
+  filters?: FilterConfig[]
   /** Layer group configurations keyed by database type (e.g., 'supply', 'demand', 'result') */
   layers?: {
     [groupName: string]: {
@@ -164,6 +173,8 @@ export interface VizDetails {
   pitch?: number
   /** Show map in reader (default true) */
   showMap?: boolean
+  /** Filter configurations for the map */
+  filters?: FilterConfig[]
   /** Memory optimization: Max features per layer (default: 100000) */
   geometryLimit?: number
   /** Memory optimization: Coordinate decimal precision (default: 5 = ~1m) */

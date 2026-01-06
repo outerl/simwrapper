@@ -529,6 +529,15 @@ export default defineComponent({
         this.setupRows(subtab.layout, subtab.subtabFolder)
       } else if (this.yaml.layout) {
         this.setupRows(this.yaml.layout)
+      } else if (this.yaml.webpolaris && Array.isArray(this.yaml.webpolaris)) {
+        // Convert webpolaris array format to dashboard layout format
+        const layout = {}
+        this.yaml.webpolaris.forEach((item: any, index: number) => {
+          // Create a row for each webpolaris item
+          const rowKey = item.item || item.title || `item-${index}`
+          layout[rowKey] = [item]
+        })
+        this.setupRows(layout)
       } else {
         this.$store.commit(
           'error',
