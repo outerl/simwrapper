@@ -41,18 +41,15 @@ class LoadingManager {
   public async acquireSlot(): Promise<() => void> {
     this.queueLength++
     this.totalMapsLoading++
-    console.log(`🔒 Queued for loading (position: ${this.queueLength}, total: ${this.totalMapsLoading})`)
 
     let releaseSlot: () => void
 
     const myTurn = this.queue.then(() => {
-      console.log(`🔓 Acquired loading slot`)
     })
 
     this.queue = new Promise<void>(resolve => {
       releaseSlot = () => {
         this.queueLength--
-        console.log(`✅ Released loading slot (remaining in queue: ${this.queueLength})`)
         resolve()
       }
     })
@@ -116,7 +113,6 @@ export async function initSql(): Promise<any> {
   splInitPromise = SPL().then((spl: any) => {
     sharedSpl = spl
     splInitPromise = null
-    console.log('✅ Shared SPL engine initialized')
     return spl
   })
 
@@ -153,7 +149,6 @@ export async function openDb(spl: any, arrayBuffer: ArrayBuffer, path?: string):
   const cached = dbCache.get(path)
   if (cached) {
     cached.refCount++
-    console.log(`📦 Reusing cached database: ${path} (refs: ${cached.refCount})`)
     return cached.db
   }
 
@@ -163,7 +158,6 @@ export async function openDb(spl: any, arrayBuffer: ArrayBuffer, path?: string):
     const nowCached = dbCache.get(path)
     if (nowCached) {
       nowCached.refCount++
-      console.log(`📦 Joined loading database: ${path} (refs: ${nowCached.refCount})`)
     }
     return db
   }
@@ -172,7 +166,6 @@ export async function openDb(spl: any, arrayBuffer: ArrayBuffer, path?: string):
     try {
       const db = await spl.db(arrayBuffer)
       dbCache.set(path, { db, refCount: 1, path })
-      console.log(`📂 Loaded and cached database: ${path}`)
       return db
     } finally {
       // Always clear, even if SPL fails (prevents a permanently stuck rejected promise)
@@ -192,7 +185,6 @@ export function releaseDb(path: string): void {
   if (!cached) return
 
   cached.refCount--
-  console.log(`📉 Database refCount decreased: ${path} (refs: ${cached.refCount})`)
   if (cached.refCount <= 0) {
     try {
       if (typeof cached.db.close === 'function') {
@@ -202,7 +194,6 @@ export function releaseDb(path: string): void {
       console.warn(`Failed to close database ${path}:`, e)
     }
     dbCache.delete(path)
-    console.log(`🗑️ Released cached database: ${path}`)
   }
 }
 
@@ -238,7 +229,6 @@ export async function attachDatabase(
     }
 
     await db.exec(`ATTACH DATABASE '${filename}' AS ${schemaName}`)
-    console.log(`📎 Attached database '${filename}' as '${schemaName}'`)
     return filename
   } catch (e) {
     console.error(`Failed to attach database ${schemaName}:`, e)

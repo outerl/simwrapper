@@ -62,7 +62,6 @@ export const getPaletteColors = (name: string, numColors: number): string[] => {
 
   // Debug: print available palettes
   const allPalettes = (cartoColors as any).default || cartoColors;
-  console.log('[styling] Available palettes:', Object.keys(allPalettes));
 
   // Map common lowercase names to proper CartoColors names
   const paletteMap: Record<string, string> = {
@@ -289,8 +288,6 @@ const buildColorEncoder = (
   const paletteName = style.palette || style.colorScheme || 'YlGn'
   const numColors = 'numColors' in style ? style.numColors : 7
   const colors = getPaletteColors(paletteName, numColors).map(h => hexToRgba(h, 1))
-  
-  console.log(`[styling] buildColorEncoder: palette=${paletteName}, range=[${min}, ${max}], numColors=${numColors}, colors=`, colors)
 
   const scale = max === min ? 0 : (numColors - 1) / (max - min)
 
@@ -439,29 +436,21 @@ export function buildStyleArrays(args: BuildArgs): BuildResult {
     }
 
     if (style.fillColor) {
-      console.log(`[styling] Processing fillColor for layer:`, style.fillColor)
       if (typeof style.fillColor === 'string') {
         // Static hex color
         const color = hexToRgba(style.fillColor, 1)
-        console.log(`[styling] Static fillColor: ${style.fillColor} ->`, color)
         for (let j = 0; j < idxs.length; j++) {
           fillColors.set(color, idxs[j] * 4)
         }
       } else if ('colors' in style.fillColor) {
-        console.log(`[styling] Categorical fillColor with colors:`, style.fillColor.colors)
         const encoder = buildCategoryEncoderRgba(style.fillColor.colors, '#808080')
         for (let j = 0; j < idxs.length; j++) {
           fillColors.set(encoder(getProp(propsArr[j], style.fillColor.column)), idxs[j] * 4)
         }
       } else if ('column' in style.fillColor || 'palette' in style.fillColor) {
         // Column-based (quantitative) encoding
-        console.log(`[styling] Quantitative fillColor:`, style.fillColor)
         const fcStyle = style.fillColor as any
         const clampRange = fcStyle.dataRange || fcStyle.range || null
-        
-        // Sample some values for debugging
-        const sampleValues = propsArr.slice(0, 5).map(p => getProp(p, fcStyle.column))
-        console.log(`[styling] Sample values for column "${fcStyle.column}":`, sampleValues)
         
         const encoder = buildColorEncoder(
           propsArr.map(p => getProp(p, fcStyle.column)),

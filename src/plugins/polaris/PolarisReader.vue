@@ -179,8 +179,6 @@ const MyComponent = defineComponent({
         const totalMaps = getTotalMapsLoading()
         const { autoLimit, autoPrecision } = this.getMemoryLimits(totalMaps)
         
-        console.log(`🗺️ Loading map (${totalMaps} total maps) - limit: ${autoLimit}, precision: ${autoPrecision}`)
-        
         const memoryOptions = {
           limit: this.vizDetails.geometryLimit ?? autoLimit,
           coordinatePrecision: this.vizDetails.coordinatePrecision ?? autoPrecision,
@@ -320,15 +318,23 @@ const MyComponent = defineComponent({
           for (const [layerName, layerDef] of Object.entries(this.config.layers)) {
             const def = layerDef as any
             const styleObj = def.style || def
+            
+            // Preserve full nested objects for color/width configurations
+            const lineColor = styleObj.color || styleObj.lineColor
+            const lineWidth = styleObj.width ?? styleObj.lineWidth
+            const fillColor = styleObj.fill || styleObj.fillColor
+            const pointRadius = styleObj.radius ?? styleObj.pointRadius
+            
             // Map shorthand YAML keys to standard layer config keys
+            // Don't default type - let shape detection infer it from style properties
             this.layerConfigs[layerName] = {
               table: styleObj.table || layerName,
-              type: styleObj.type || 'line',
+              type: styleObj.type,
               style: {
-                lineColor: styleObj.color || styleObj.lineColor,
-                lineWidth: styleObj.width ?? styleObj.lineWidth,
-                fillColor: styleObj.fill || styleObj.fillColor,
-                pointRadius: styleObj.radius ?? styleObj.pointRadius,
+                lineColor: lineColor,
+                lineWidth: lineWidth,
+                fillColor: fillColor,
+                pointRadius: pointRadius,
               }
             }
           }
@@ -434,8 +440,6 @@ const MyComponent = defineComponent({
                     pointRadius: pointRadius,
                   }
                 }
-                
-                console.log(`[PolarisReader] Layer "${layerName}" config:`, JSON.stringify(this.layerConfigs[layerName], null, 2))
               }
               this.vizDetails.layers = this.layerConfigs
             }
@@ -595,7 +599,8 @@ const MyComponent = defineComponent({
       })
       return nums.join(',')
     },
-    handleFeatureClick(feature: any): void { console.log('Clicked feature:', feature?.properties) },
+    handleFeatureClick(feature: any): void { },
+
     handleTooltip(index: number, feature: any): string {
       let props = feature?.properties
       
