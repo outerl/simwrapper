@@ -335,6 +335,7 @@ export default defineComponent({
             pointRadiusMinPixels: 0,
             // pointRadiusMaxPixels: 50,
             stroked: this.isStroked,
+            filled: true,
             // useDevicePixels: this.isTakingScreenshot,
             // fp64: false,
             // material: false,

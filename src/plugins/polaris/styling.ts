@@ -20,6 +20,7 @@ import type {
   BuildResult,
 } from './types'
 
+
 /**
  * Converts a hex color string to RGB array
  * 
@@ -55,9 +56,76 @@ const hexToRgba = (hex: string, alpha: number = 1): RGBA => {
  * @param numColors - Number of colors needed
  * @returns Array of hex color strings
  */
-const getPaletteColors = (name: string, numColors: number): string[] => {
-  const palette = (cartoColors as any)[name || 'YlGn']
-  if (!palette) return Array(numColors).fill('#808080')
+export const getPaletteColors = (name: string, numColors: number): string[] => {
+  // Normalize palette name - CartoColors uses specific casing
+  let paletteName = name || 'YlGn'
+
+  // Debug: print available palettes
+  const allPalettes = (cartoColors as any).default || cartoColors;
+  console.log('[styling] Available palettes:', Object.keys(allPalettes));
+
+  // Map common lowercase names to proper CartoColors names
+  const paletteMap: Record<string, string> = {
+    'viridis': 'Viridis',
+    'plasma': 'Plasma', 
+    'inferno': 'Inferno',
+    'magma': 'Magma',
+    'blues': 'Blues',
+    'greens': 'Greens',
+    'reds': 'Reds',
+    'oranges': 'Oranges',
+    'purples': 'Purples',
+    'ylgn': 'YlGn',
+    'ylgnbu': 'YlGnBu',
+    'gnbu': 'GnBu',
+    'bugn': 'BuGn',
+    'pubugn': 'PuBuGn',
+    'pubu': 'PuBu',
+    'bupu': 'BuPu',
+    'rdpu': 'RdPu',
+    'purd': 'PuRd',
+    'orrd': 'OrRd',
+    'ylorbr': 'YlOrBr',
+    'ylorrd': 'YlOrRd',
+    'peach': 'Peach',
+    'pinkyl': 'PinkYl',
+    'mint': 'Mint',
+    'burgyl': 'BurgYl',
+    'burg': 'Burg',
+    'sunset': 'Sunset',
+    'sunsetdark': 'SunsetDark',
+    'agolagn': 'AgolaGn',
+    'brwnyl': 'BrwnYl',
+    'teal': 'Teal',
+    'tealgrn': 'TealGrn',
+    'purp': 'Purp',
+    'purpor': 'PurpOr',
+    'emrld': 'Emrld',
+  }
+  
+  const lowerName = paletteName.toLowerCase()
+  if (paletteMap[lowerName]) {
+    paletteName = paletteMap[lowerName]
+  }
+  
+  let palette = (cartoColors as any)[paletteName]
+  // Handle CommonJS default export if needed
+  if (!palette && (cartoColors as any).default) {
+    palette = (cartoColors as any).default[paletteName]
+  }
+  
+  // If still not found, try case-insensitive search
+  if (!palette) {
+    const allPalettes = (cartoColors as any).default || cartoColors
+    const foundKey = Object.keys(allPalettes).find(k => k.toLowerCase() === lowerName)
+    if (foundKey) palette = allPalettes[foundKey]
+  }
+  
+  if (!palette) {
+    console.warn(`[styling] Palette "${name}" not found, using fallback grey`)
+    return Array(numColors).fill('#808080')
+  }
+  
   const sizes = Object.keys(palette)
     .map(Number)
     .filter(n => n > 0)
@@ -190,12 +258,15 @@ const buildColorEncoder = (
   style: QuantitativeColorStyle,
   dataRange: [number, number] | null = null
 ) => {
-  if (dataRange) {
+  // Use dataRange from style if provided
+  const effectiveRange = dataRange || (style as any).dataRange || null
+  
+  if (effectiveRange) {
     // clamp the values to within the data range
     values = values.map(v => {
       const num = toNumber(v)
       if (num === null) return null
-      return Math.max(dataRange[0], Math.min(dataRange[1], num))
+      return Math.max(effectiveRange[0], Math.min(effectiveRange[1], num))
     })
   }
 
@@ -207,15 +278,19 @@ const buildColorEncoder = (
     typeof style.max === 'number' &&
     Number.isFinite(style.max)
 
-  const [min, max] = style.range
-    ? style.range
-    : hasLegacyMinMax
-      ? [style.min!, style.max!]
-      : [safeMin(nums), safeMax(nums)]
+  const [min, max] = effectiveRange
+    ? effectiveRange
+    : style.range
+      ? style.range
+      : hasLegacyMinMax
+        ? [style.min!, style.max!]
+        : [safeMin(nums), safeMax(nums)]
 
   const paletteName = style.palette || style.colorScheme || 'YlGn'
   const numColors = 'numColors' in style ? style.numColors : 7
   const colors = getPaletteColors(paletteName, numColors).map(h => hexToRgba(h, 1))
+  
+  console.log(`[styling] buildColorEncoder: palette=${paletteName}, range=[${min}, ${max}], numColors=${numColors}, colors=`, colors)
 
   const scale = max === min ? 0 : (numColors - 1) / (max - min)
 
@@ -236,6 +311,15 @@ const buildCategoryEncoderRgb = (colors: Record<string, string>, defaultColor: s
   return (value: any): RGB => {
     return colorMap.get(String(value)) || defaultRgb
   }
+}
+
+const getProp = (props: any, key: string): any => {
+  if (!props) return null
+  if (key in props) return props[key]
+  // Case-insensitive fallback
+  const lower = key.toLowerCase()
+  const found = Object.keys(props).find(k => k.toLowerCase() === lower)
+  return found ? props[found] : null
 }
 
 const buildCategoryEncoderRgba = (colors: Record<string, string>, defaultColor: string = '#808080') => {
@@ -355,32 +439,39 @@ export function buildStyleArrays(args: BuildArgs): BuildResult {
     }
 
     if (style.fillColor) {
+      console.log(`[styling] Processing fillColor for layer:`, style.fillColor)
       if (typeof style.fillColor === 'string') {
         // Static hex color
         const color = hexToRgba(style.fillColor, 1)
+        console.log(`[styling] Static fillColor: ${style.fillColor} ->`, color)
         for (let j = 0; j < idxs.length; j++) {
           fillColors.set(color, idxs[j] * 4)
         }
       } else if ('colors' in style.fillColor) {
+        console.log(`[styling] Categorical fillColor with colors:`, style.fillColor.colors)
         const encoder = buildCategoryEncoderRgba(style.fillColor.colors, '#808080')
         for (let j = 0; j < idxs.length; j++) {
-          fillColors.set(encoder(propsArr[j]?.[style.fillColor.column]), idxs[j] * 4)
+          fillColors.set(encoder(getProp(propsArr[j], style.fillColor.column)), idxs[j] * 4)
         }
-      } else if ('column' in style.fillColor) {
-        // Column-based encoding
-        const clampRange =
-          (style.fillColor as any).dataRange ||
-          (style.fillColor as any).range ||
-          (typeof (style.fillColor as any).min === 'number' && typeof (style.fillColor as any).max === 'number'
-            ? [(style.fillColor as any).min, (style.fillColor as any).max]
-            : null)
+      } else if ('column' in style.fillColor || 'palette' in style.fillColor) {
+        // Column-based (quantitative) encoding
+        console.log(`[styling] Quantitative fillColor:`, style.fillColor)
+        const fcStyle = style.fillColor as any
+        const clampRange = fcStyle.dataRange || fcStyle.range || null
+        
+        // Sample some values for debugging
+        const sampleValues = propsArr.slice(0, 5).map(p => getProp(p, fcStyle.column))
+        console.log(`[styling] Sample values for column "${fcStyle.column}":`, sampleValues)
+        
         const encoder = buildColorEncoder(
-          propsArr.map(p => p?.[style.fillColor!.column]),
+          propsArr.map(p => getProp(p, fcStyle.column)),
           style.fillColor as QuantitativeColorStyle,
           clampRange
         )
         for (let j = 0; j < idxs.length; j++) {
-          fillColors.set(encoder(propsArr[j]?.[style.fillColor.column]), idxs[j] * 4)
+          const val = getProp(propsArr[j], fcStyle.column)
+          const color = encoder(val)
+          fillColors.set(color, idxs[j] * 4)
         }
       }
     }
@@ -397,7 +488,7 @@ export function buildStyleArrays(args: BuildArgs): BuildResult {
       } else if ('colors' in style.lineColor) {
         const encoder = buildCategoryEncoderRgb(style.lineColor.colors, '#808080')
         for (let j = 0; j < idxs.length; j++) {
-          lineColors.set(encoder(propsArr[j]?.[style.lineColor.column]), idxs[j] * 3)
+          lineColors.set(encoder(getProp(propsArr[j], style.lineColor.column)), idxs[j] * 3)
         }
       } else if ('column' in style.lineColor) {
         // Column-based encoding
@@ -408,12 +499,12 @@ export function buildStyleArrays(args: BuildArgs): BuildResult {
             ? [(style.lineColor as any).min, (style.lineColor as any).max]
             : null)
         const encoder = buildColorEncoder(
-          propsArr.map(p => p?.[style.lineColor!.column]),
+          propsArr.map(p => getProp(p, style.lineColor!.column)),
           style.lineColor as QuantitativeColorStyle,
           clampRange
         )
         for (let j = 0; j < idxs.length; j++) {
-          const [r, g, b] = encoder(propsArr[j]?.[style.lineColor.column])
+          const [r, g, b] = encoder(getProp(propsArr[j], style.lineColor.column))
           lineColors[idxs[j] * 3] = r
           lineColors[idxs[j] * 3 + 1] = g
           lineColors[idxs[j] * 3 + 2] = b
@@ -440,11 +531,11 @@ export function buildStyleArrays(args: BuildArgs): BuildResult {
         // Category-based mapping: { column, widths }
         const widthMap = style.lineWidth.widths || {}
         for (let j = 0; j < idxs.length; j++) {
-          const v = propsArr[j]?.[style.lineWidth.column]
+          const v = getProp(propsArr[j], style.lineWidth.column)
           lineWidths[idxs[j]] = widthMap[v] ?? defaultWidth
         }
       } else if ('column' in style.lineWidth) {
-        const values = propsArr.map(p => toNumber(p?.[style.lineWidth!.column]))
+        const values = propsArr.map(p => toNumber(getProp(p, style.lineWidth!.column)))
         applyQuantitativeMapping(
           values,
           style.lineWidth.dataRange ?? [1, 6],
@@ -457,14 +548,14 @@ export function buildStyleArrays(args: BuildArgs): BuildResult {
       }
     }
 
-    // pointRadius - handle both static and column-based
+    // pointRadius - handle static and column-based
     if (style.pointRadius) {
       if (typeof style.pointRadius === 'number') {
         for (let j = 0; j < idxs.length; j++) {
           pointRadii[idxs[j]] = style.pointRadius
         }
       } else if ('column' in style.pointRadius) {
-        const values = propsArr.map(p => toNumber(p?.[style.pointRadius!.column]))
+        const values = propsArr.map(p => toNumber(getProp(p, style.pointRadius!.column)))
         applyQuantitativeMapping(
           values,
           style.pointRadius.dataRange ?? [2, 12],
@@ -484,7 +575,7 @@ export function buildStyleArrays(args: BuildArgs): BuildResult {
           fillHeights[idxs[j]] = style.fillHeight
         }
       } else if ('column' in style.fillHeight) {
-        const values = propsArr.map(p => toNumber(p?.[style.fillHeight!.column]))
+        const values = propsArr.map(p => toNumber(getProp(p, style.fillHeight!.column)))
         applyQuantitativeMapping(
           values,
           style.fillHeight.dataRange ?? [0, 100],

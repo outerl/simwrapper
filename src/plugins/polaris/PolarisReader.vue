@@ -21,7 +21,7 @@ import globalStore from '@/store'
 import { FileSystemConfig } from '@/Globals'
 import PolarisFileSystem from './PolarisFileSystem'
 import { initSql, openDb, releaseSql, releaseDb, acquireLoadingSlot, parsePolarisYaml, buildVizDetails, buildTables, buildGeoFeatures, getTotalMapsLoading, mapLoadingComplete, autoDetectDatabases, attachDatabase, detachDatabase } from './usePolaris'
-import { buildStyleArrays } from './styling'
+import { buildStyleArrays, getPaletteColors } from './styling'
 import DeckMapComponent from '@/plugins/shape-file/DeckMapComponent.vue'
 import LegendColors from '@/components/LegendColors.vue'
 import BackgroundLayers from '@/js/BackgroundLayers'
@@ -184,7 +184,7 @@ const MyComponent = defineComponent({
         const memoryOptions = {
           limit: this.vizDetails.geometryLimit ?? autoLimit,
           coordinatePrecision: this.vizDetails.coordinatePrecision ?? autoPrecision,
-          minimalProperties: this.vizDetails.minimalProperties !== false,
+          minimalProperties: this.vizDetails.minimalProperties === true,
         }
       
         const features = await buildGeoFeatures(
@@ -415,17 +415,27 @@ const MyComponent = defineComponent({
               for (const [layerName, layerDef] of Object.entries(item.layers)) {
                 const def = layerDef as any
                 const styleObj = def.style || def
+                
+                // Preserve full nested objects for color/width configurations
+                const lineColor = styleObj.color || styleObj.lineColor
+                const lineWidth = styleObj.width ?? styleObj.lineWidth
+                const fillColor = styleObj.fill || styleObj.fillColor
+                const pointRadius = styleObj.radius ?? styleObj.pointRadius
+                
                 // Map shorthand YAML keys to standard layer config keys
                 this.layerConfigs[layerName] = {
                   table: styleObj.table || layerName,
-                  type: styleObj.type || 'line',
+                  type: styleObj.type,
                   style: {
-                    lineColor: styleObj.color || styleObj.lineColor,
-                    lineWidth: styleObj.width ?? styleObj.lineWidth,
-                    fillColor: styleObj.fill || styleObj.fillColor,
-                    pointRadius: styleObj.radius ?? styleObj.pointRadius,
+                    // Preserve objects as-is (for quantitative/categorical configs)
+                    lineColor: lineColor,
+                    lineWidth: lineWidth,
+                    fillColor: fillColor,
+                    pointRadius: pointRadius,
                   }
                 }
+                
+                console.log(`[PolarisReader] Layer "${layerName}" config:`, JSON.stringify(this.layerConfigs[layerName], null, 2))
               }
               this.vizDetails.layers = this.layerConfigs
             }
@@ -458,8 +468,122 @@ const MyComponent = defineComponent({
           }
         })
       } else {
-        this.legendItems = []
+        this.legendItems = this.generateAutoLegend()
       }
+    },
+
+    generateAutoLegend(): Array<any> {
+      const items: any[] = []
+      
+      for (const [layerName, config] of Object.entries(this.layerConfigs)) {
+        const style = config.style
+        if (!style) continue
+
+        // Determine shape based on style properties
+        let shape = config.type
+        if (!shape) {
+           if (style.pointRadius) shape = 'circle'
+           else if (style.fillColor) shape = 'polygon'
+           else if (style.lineColor) shape = 'line'
+           else shape = 'polygon'
+        }
+        
+        // Add header if multiple layers
+        if (Object.keys(this.layerConfigs).length > 1) {
+             items.push({ type: 'subtitle', label: layerName })
+        }
+
+        // Logic for Colors - use fillColor for polygons/points, lineColor for lines
+        const colorStyle = (shape === 'line') ? style.lineColor : (style.fillColor || style.lineColor)
+        
+        if (colorStyle) {
+          if (typeof colorStyle === 'string') {
+             // Static
+             items.push({ 
+               type: shape, 
+               label: layerName, 
+               color: this.convertColorForLegend(colorStyle),
+               size: this.getDefaultSize(style, shape)
+             })
+          } else if ('colors' in colorStyle) {
+             // Categorical
+             if (Object.keys(this.layerConfigs).length <= 1) {
+                 items.push({ type: 'subtitle', label: (colorStyle as any).column })
+             }
+             
+             for (const [val, hex] of Object.entries((colorStyle as any).colors)) {
+               items.push({
+                 type: shape,
+                 label: String(val),
+                 color: this.convertColorForLegend(hex as string),
+                 size: this.getDefaultSize(style, shape)
+               })
+             }
+          } else if ('palette' in colorStyle || 'column' in colorStyle) {
+             // Quantitative
+             const cs = colorStyle as any
+             const palette = cs.palette || 'YlGn'
+             const range = cs.dataRange || cs.range || [0, 100]
+             
+             if (Object.keys(this.layerConfigs).length <= 1) {
+                 items.push({ type: 'subtitle', label: cs.column })
+             }
+             
+             const steps = 5
+             const colors = getPaletteColors(palette, steps)
+             // Safety check for empty colors
+             if (!colors || colors.length === 0) continue
+
+             const stepSize = (range[1] - range[0]) / (steps - 1)
+             
+             for (let i = 0; i < steps; i++) {
+               const val = range[0] + (stepSize * i)
+               const label = val >= 1000 ? (val/1000).toFixed(1) + 'k' : (val % 1 === 0 ? val.toFixed(0) : val.toFixed(1))
+               
+               items.push({
+                 type: shape,
+                 label: label,
+                 color: this.convertColorForLegend(colors[i]),
+                 size: this.getDefaultSize(style, shape)
+               })
+             }
+          }
+        }
+        
+        // Logic for Widths (Categorical) - only for line shapes
+        if (shape === 'line' && style.lineWidth && typeof style.lineWidth === 'object' && 'widths' in style.lineWidth) {
+             items.push({ type: 'subtitle', label: (style.lineWidth as any).column || 'Width' })
+             const widths = (style.lineWidth as any).widths
+             const widthValues = Object.values(widths).map(Number)
+             const maxWidth = Math.max(...widthValues)
+             const minWidth = Math.min(...widthValues)
+             const widthScale = maxWidth > 0 ? 8 / maxWidth : 1
+             
+             for (const [val, width] of Object.entries(widths)) {
+                 const w = Number(width)
+                 // Scale proportionally: smallest width = 2px, largest = 10px
+                 const scaledSize = Math.max(2, Math.round(w * widthScale) + 2)
+                 items.push({
+                     type: 'line',
+                     label: String(val),
+                     color: '128,128,128',
+                     size: scaledSize
+                 })
+             }
+        }
+      }
+      return items
+    },
+
+    getDefaultSize(style: any, shape: string): number {
+        if (shape === 'line') {
+          // Map units are meters, but Legend is pixels. 
+          // Scale down significantly to represent relative thickness without being huge.
+          const width = typeof style.lineWidth === 'number' ? style.lineWidth : 4
+          return Math.max(2, Math.min(width / 3, 8))
+        }
+        if (shape === 'circle') return typeof style.pointRadius === 'number' ? style.pointRadius : 6
+        return 12 // polygon
     },
 
     convertColorForLegend(color?: string): string {
@@ -472,8 +596,14 @@ const MyComponent = defineComponent({
       return nums.join(',')
     },
     handleFeatureClick(feature: any): void { console.log('Clicked feature:', feature?.properties) },
-    handleTooltip(hoverInfo: any): string {
-      const props = hoverInfo?.object?.properties
+    handleTooltip(index: number, feature: any): string {
+      let props = feature?.properties
+      
+      // Fallback: If feature has no properties (e.g. line segments), look up by index
+      if (!props && index >= 0 && this.geoJsonFeatures[index]) {
+        props = this.geoJsonFeatures[index].properties
+      }
+
       if (!props) return ''
       const EXCLUDE = new Set(['_table', '_layer', '_layerConfig', 'geometry', 'geo'])
       const lines: string[] = []
@@ -666,5 +796,13 @@ export default MyComponent
   font-size: 1.2rem;
   font-weight: 600;
   color: var(--textFancy, #111);
+}
+</style>
+
+<!-- Global style for DeckGL tooltip to prevent flickering/interaction blocking -->
+<style lang="scss">
+.deck-tooltip {
+  pointer-events: none !important;
+  user-select: none !important;
 }
 </style>
