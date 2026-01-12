@@ -1,36 +1,44 @@
 /**
  * Database utilities for AequilibraE plugin
- * 
+ *
  * This module provides helper functions for interacting with SQLite databases
  * containing spatial data and results. It includes functions for schema inspection,
  * data querying, joining operations, and memory-optimized GeoJSON extraction.
- * 
+ *
  * @fileoverview Database Utility Functions for AequilibraE
  * @author SimWrapper Development Team
  */
 
-import type { JoinConfig } from './types'
+import type { JoinConfig, GeoFeature, SqliteDb, SPL } from './types'
+import {
+  GEOMETRY_COLUMN,
+  ESSENTIAL_SPATIAL_COLUMNS,
+  isGeometryColumn,
+  getUsedColumns,
+  buildColumnSelection,
+  simplifyCoordinates,
+} from './utils'
 
 /**
  * Retrieves all table names from a SQLite database
- * 
+ *
  * @param db - SQLite database connection object
  * @returns Promise<string[]> Array of table names
  */
-export async function getTableNames(db: any): Promise<string[]> {
+export async function getTableNames(db: SqliteDb): Promise<string[]> {
   const result = await db.exec("SELECT name FROM sqlite_master WHERE type='table';").get.objs
   return result.map((row: any) => row.name)
 }
 
 /**
  * Gets the schema (column information) for a specific table
- * 
+ *
  * @param db - SQLite database connection object
  * @param tableName - Name of the table to inspect
  * @returns Promise with array of column metadata (name, type, nullable)
  */
 export async function getTableSchema(
-  db: any,
+  db: SqliteDb,
   tableName: string
 ): Promise<{ name: string; type: string; nullable: boolean }[]> {
   const result = await db.exec(`PRAGMA table_info("${tableName}");`).get.objs
@@ -43,19 +51,19 @@ export async function getTableSchema(
 
 /**
  * Counts the number of rows in a table
- * 
+ *
  * @param db - SQLite database connection object
  * @param tableName - Name of the table to count
  * @returns Promise<number> Number of rows in the table
  */
-export async function getRowCount(db: any, tableName: string): Promise<number> {
+export async function getRowCount(db: SqliteDb, tableName: string): Promise<number> {
   const result = await db.exec(`SELECT COUNT(*) as count FROM "${tableName}";`).get.objs
   return result.length > 0 ? result[0].count : 0
 }
 
 /**
  * Query a table and return all rows as objects
- * 
+ *
  * @param db - SQLite database connection object
  * @param tableName - Name of the table to query
  * @param columns - Optional array of column names to select (default: all columns)
@@ -63,7 +71,7 @@ export async function getRowCount(db: any, tableName: string): Promise<number> {
  * @returns Promise<Record<string, any>[]> Array of row objects
  */
 export async function queryTable(
-  db: any,
+  db: SqliteDb,
   tableName: string,
   columns?: string[],
   whereClause?: string
@@ -87,106 +95,114 @@ export function performJoin(
   joinData: Record<string, any>[],
   joinConfig: JoinConfig
 ): Record<string, any>[] {
-  const joinLookup = new Map<any, Record<string, any>>();
+  const joinLookup = new Map<any, Record<string, any>>()
   for (const row of joinData) {
-    const key = row[joinConfig.rightKey];
+    const key = row[joinConfig.rightKey]
     if (key !== undefined && key !== null) {
-      joinLookup.set(key, row);
+      joinLookup.set(key, row)
     }
   }
 
-  const results: Record<string, any>[] = [];
-  for (const mainRow of mainData) {
-    const joinKey = mainRow[joinConfig.leftKey];
-    const joinRow = joinLookup.get(joinKey);
+  return mainData
+    .map(mainRow => {
+      const joinRow = joinLookup.get(mainRow[joinConfig.leftKey])
 
-    if (joinRow) {
+      if (!joinRow && joinConfig.type !== 'left') {
+        return null // Skip non-matching rows in inner join
+      }
+
+      if (!joinRow) {
+        return mainRow // Left join: keep main row without joined data
+      }
+
+      // Extract only the columns specified, or all columns
       const joinedColumns = joinConfig.columns?.length
         ? Object.fromEntries(
-            joinConfig.columns.map((col) => [col, joinRow[col]]).filter(([_, value]) => value !== undefined)
+            joinConfig.columns
+              .map(col => [col, joinRow[col]])
+              .filter(([_, value]) => value !== undefined)
           )
-        : { ...joinRow };
+        : { ...joinRow }
 
-      results.push({ ...mainRow, ...joinedColumns });
-    } else if (joinConfig.type === 'left') {
-      results.push({ ...mainRow });
-    }
-  }
-
-  return results;
+      return { ...mainRow, ...joinedColumns }
+    })
+    .filter((row): row is Record<string, any> => row !== null)
 }
 
 // Cache for joinData
-const joinDataCache: Map<string, Map<any, Record<string, any>>> = new Map();
+const joinDataCache: Map<string, Map<any, Record<string, any>>> = new Map()
 
 /**
  * Get cached joinData or load it if not cached
+ * Accepts an optional neededColumn to reduce memory by querying fewer columns.
  */
-async function getCachedJoinData(
-  db: any,
-  joinConfig: JoinConfig
+export async function getCachedJoinData(
+  db: SqliteDb,
+  joinConfig: JoinConfig,
+  neededColumn?: string
 ): Promise<Map<any, Record<string, any>>> {
-  const cacheKey = `${joinConfig.table}::${joinConfig.rightKey}::${joinConfig.filter || ''}`;
+  const cacheKey = `${joinConfig.table}::${joinConfig.rightKey}::${neededColumn || '*'}::${
+    joinConfig.filter || ''
+  }`
 
   if (joinDataCache.has(cacheKey)) {
-    return joinDataCache.get(cacheKey)!;
+    return joinDataCache.get(cacheKey)!
   }
 
-  const joinRows = await queryTable(db, joinConfig.table, joinConfig.columns, joinConfig.filter);
-  const joinData = new Map(joinRows.map((row) => [row[joinConfig.rightKey], row]));
-  joinDataCache.set(cacheKey, joinData);
+  // Determine which columns to query - minimize memory usage
+  let columnsToQuery: string[] | undefined
+  if (neededColumn) {
+    columnsToQuery = [joinConfig.rightKey]
+    if (neededColumn !== joinConfig.rightKey) {
+      columnsToQuery.push(neededColumn)
+    }
+  } else if (joinConfig.columns && joinConfig.columns.length > 0) {
+    const colSet = new Set(joinConfig.columns)
+    colSet.add(joinConfig.rightKey)
+    columnsToQuery = Array.from(colSet)
+  } else {
+    columnsToQuery = undefined
+  }
 
-  return joinData;
+  const joinRows = await queryTable(db, joinConfig.table, columnsToQuery, joinConfig.filter)
+  const joinData = new Map(joinRows.map(row => [row[joinConfig.rightKey], row]))
+  joinDataCache.set(cacheKey, joinData)
+
+  return joinData
 }
 
-/**
- * Simplify coordinates by reducing precision (removes ~30-50% memory for coordinates)
- * Uses iterative approach to avoid stack overflow with large/nested geometries
- * @param coords - Coordinate array to simplify
- * @param precision - Number of decimal places to keep (default 6 = ~0.1m precision)
- */
-function simplifyCoordinates(coords: any, precision: number = 6): any {
-  if (!coords || !Array.isArray(coords)) return coords
-  
-  const factor = Math.pow(10, precision)
-  
-  // Use a stack-based iterative approach to avoid recursion stack overflow
-  // We process the structure and build a new simplified version
-  const simplifyValue = (val: any): any => {
-    if (typeof val === 'number') {
-      return Math.round(val * factor) / factor
+// Helper: build properties object from a database row
+function buildPropertiesFromRow(
+  selectedColumns: any[],
+  row: any,
+  layerName: string
+): Record<string, any> {
+  const properties: Record<string, any> = { _layer: layerName }
+  for (const col of selectedColumns) {
+    const key = col.name
+    if (
+      key !== 'geojson_geom' &&
+      key !== 'geom_type' &&
+      row[key] !== null &&
+      row[key] !== undefined
+    ) {
+      properties[key] = row[key]
     }
-    if (!Array.isArray(val)) {
-      return val
-    }
-    // Check if this is a coordinate (array of numbers)
-    if (val.length > 0 && typeof val[0] === 'number') {
-      return val.map((n: number) => Math.round(n * factor) / factor)
-    }
-    // Otherwise it's a nested array - process each element
-    return val.map((item: any) => simplifyValue(item))
   }
-  
-  return simplifyValue(coords)
+  return properties
 }
 
-/**
- * Identify columns that are actually used for styling in the layer config
- */
-function getUsedColumns(layerConfig: any): Set<string> {
-  const used = new Set<string>()
-  if (!layerConfig?.style) return used
-  
-  const style = layerConfig.style
-  // Check all style properties that might reference columns
-  const styleProps = ['fillColor', 'lineColor', 'lineWidth', 'pointRadius', 'fillHeight', 'filter']
-  for (const prop of styleProps) {
-    const cfg = style[prop]
-    if (cfg && typeof cfg === 'object' && 'column' in cfg) {
-      used.add(cfg.column)
+// Helper: parse GeoJSON string/object and simplify coordinates if needed
+function parseAndSimplifyGeometry(geojson: any, coordPrecision: number): any | null {
+  try {
+    const geometry = typeof geojson === 'string' ? JSON.parse(geojson) : geojson
+    if (geometry && geometry.coordinates && coordPrecision < 15) {
+      geometry.coordinates = simplifyCoordinates(geometry.coordinates, coordPrecision)
     }
+    return geometry
+  } catch (e) {
+    return null
   }
-  return used
 }
 
 /**
@@ -201,7 +217,7 @@ function getUsedColumns(layerConfig: any): Set<string> {
  * @param options - Optional settings for memory optimization
  */
 export async function fetchGeoJSONFeatures(
-  db: any,
+  db: SqliteDb,
   table: { name: string; columns: any[] },
   layerName: string,
   layerConfig: any,
@@ -212,44 +228,47 @@ export async function fetchGeoJSONFeatures(
     coordinatePrecision?: number
     minimalProperties?: boolean
   }
-) {
-  const limit = options?.limit ?? 1000000  // Default limit
+): Promise<GeoFeature[]> {
+  const limit = options?.limit ?? 1000000 // Default limit
   const coordPrecision = options?.coordinatePrecision ?? 5
   const minimalProps = options?.minimalProperties ?? true
 
   // Resolve joined data early so we can reuse the cached Map instead of rebuilding arrays per row
-  const cachedJoinedData = joinedData ?? (joinConfig ? await getCachedJoinData(db, joinConfig) : undefined)
-  
+  const cachedJoinedData =
+    joinedData ?? (joinConfig ? await getCachedJoinData(db, joinConfig) : undefined)
+
   // Determine which columns we actually need
   const usedColumns = getUsedColumns(layerConfig)
   // Always include the join key if we have a join
   if (joinConfig) {
     usedColumns.add(joinConfig.leftKey)
   }
-  
+
   // Build column list - either all columns or just the ones we need
   let columnNames: string
   if (minimalProps && usedColumns.size > 0) {
     // Only select columns that are used for styling + a few essential ones
-    const essentialCols = new Set(['id', 'name', 'link_id', 'node_id', 'zone_id', 'a_node', 'b_node'])
     const colsToSelect = table.columns
       .filter((c: any) => {
         const name = c.name.toLowerCase()
-        return name !== 'geometry' && 
-               (usedColumns.has(c.name) || essentialCols.has(name))
+        return (
+          !isGeometryColumn(name) &&
+          (usedColumns.has(c.name) || ESSENTIAL_SPATIAL_COLUMNS.has(name))
+        )
       })
       .map((c: any) => `"${c.name}"`)
-    
+
     // If no specific columns identified, fall back to all
-    columnNames = colsToSelect.length > 0 
-      ? colsToSelect.join(', ')
-      : table.columns
-          .filter((c: any) => c.name.toLowerCase() !== 'geometry')
-          .map((c: any) => `"${c.name}"`)
-          .join(', ')
+    columnNames =
+      colsToSelect.length > 0
+        ? colsToSelect.join(', ')
+        : table.columns
+            .filter((c: any) => !isGeometryColumn(c.name))
+            .map((c: any) => `"${c.name}"`)
+            .join(', ')
   } else {
     columnNames = table.columns
-      .filter((c: any) => c.name.toLowerCase() !== 'geometry')
+      .filter((c: any) => !isGeometryColumn(c.name))
       .map((c: any) => `"${c.name}"`)
       .join(', ')
   }
@@ -273,32 +292,34 @@ export async function fetchGeoJSONFeatures(
     WHERE ${filterClause}
     LIMIT ${limit};
   `
-  
+
   // Execute query and get rows
   const queryResult = await db.exec(query)
   let rows = await queryResult.get.objs
-  
+
   // Pre-allocate features array - will trim at end
-  const features: any[] = []
-  
+  const features: GeoFeature[] = []
+
   const joinType = joinConfig?.type || 'left'
-  
+
   // Get the list of columns we actually selected
-  const selectedColumns = minimalProps && usedColumns.size > 0
-    ? table.columns.filter((c: any) => {
-        const name = c.name.toLowerCase()
-        const essentialCols = new Set(['id', 'link_id', 'node_id', 'zone_id', 'a_node', 'b_node'])
-        return name !== 'geometry' && 
-               (usedColumns.has(c.name) || essentialCols.has(name))
-      })
-    : table.columns.filter((c: any) => c.name.toLowerCase() !== 'geometry')
+  const selectedColumns =
+    minimalProps && usedColumns.size > 0
+      ? table.columns.filter((c: any) => {
+          const name = c.name.toLowerCase()
+          return (
+            !isGeometryColumn(name) &&
+            (usedColumns.has(c.name) || ESSENTIAL_SPATIAL_COLUMNS.has(name))
+          )
+        })
+      : table.columns.filter((c: any) => !isGeometryColumn(c.name))
 
   // Process rows in small batches to allow GC to run
   const BATCH_SIZE = 5000
-  
+
   for (let batchStart = 0; batchStart < rows.length; batchStart += BATCH_SIZE) {
     const batchEnd = Math.min(batchStart + BATCH_SIZE, rows.length)
-    
+
     for (let r = batchStart; r < batchEnd; r++) {
       const row = rows[r]
       if (!row.geojson_geom) {
@@ -309,10 +330,15 @@ export async function fetchGeoJSONFeatures(
 
       // Build minimal properties object
       // _layer is REQUIRED for styling to work correctly
-      const properties: any = { _layer: layerName }
+      const properties: Record<string, any> = { _layer: layerName }
       for (const col of selectedColumns) {
         const key = col.name
-        if (key !== 'geojson_geom' && key !== 'geom_type' && row[key] !== null && row[key] !== undefined) {
+        if (
+          key !== 'geojson_geom' &&
+          key !== 'geom_type' &&
+          row[key] !== null &&
+          row[key] !== undefined
+        ) {
           properties[key] = row[key]
         }
       }
@@ -337,10 +363,9 @@ export async function fetchGeoJSONFeatures(
       // Parse the GeoJSON string into an object
       let geometry: any
       try {
-        geometry = typeof row.geojson_geom === 'string' 
-          ? JSON.parse(row.geojson_geom) 
-          : row.geojson_geom
-        
+        geometry =
+          typeof row.geojson_geom === 'string' ? JSON.parse(row.geojson_geom) : row.geojson_geom
+
         // Simplify coordinates to reduce memory footprint (skip if precision is max)
         if (geometry.coordinates && coordPrecision < 15) {
           geometry.coordinates = simplifyCoordinates(geometry.coordinates, coordPrecision)
@@ -352,20 +377,139 @@ export async function fetchGeoJSONFeatures(
       }
 
       features.push({ type: 'Feature', geometry, properties })
-      
+
       // Clear the row reference to allow GC to reclaim memory
       rows[r] = null
     }
-    
+
     // Yield to allow GC between batches
     if (batchEnd < rows.length) {
       await new Promise(resolve => setTimeout(resolve, 0))
     }
   }
-  
+
   // Clear the rows array reference entirely to help GC
   rows.length = 0
-  rows = null as any  // Remove reference so original array can be GC'd
-  
+  rows = null as any // Remove reference so original array can be GC'd
+
   return features
+}
+
+// ============================================================================
+// Database + file caching moved here from useAequilibrae for centralization
+// ============================================================================
+
+interface CachedDb {
+  db: any
+  refCount: number
+  path: string
+}
+
+const dbCache = new Map<string, CachedDb>()
+const dbLoadPromises = new Map<string, Promise<SqliteDb>>()
+const fileCache = new Map<string, ArrayBuffer>()
+
+/**
+ * Get a file blob, using cache if available to avoid re-downloading from S3
+ */
+export function getCachedFileBuffer(path: string, arrayBuffer: ArrayBuffer): ArrayBuffer {
+  if (fileCache.has(path)) {
+    return fileCache.get(path)!
+  }
+  fileCache.set(path, arrayBuffer)
+  return arrayBuffer
+}
+
+/**
+ * Check if a file is cached without downloading
+ */
+export function hasCachedFile(path: string): boolean {
+  return fileCache.has(path)
+}
+
+/**
+ * Get cached file buffer if available
+ */
+export function getCachedFile(path: string): ArrayBuffer | null {
+  return fileCache.get(path) || null
+}
+
+/**
+ * Open a database, using cache if available.
+ * Multiple maps using the same database file will share one instance.
+ */
+export async function openDb(spl: SPL, arrayBuffer: ArrayBuffer, path?: string): Promise<SqliteDb> {
+  // If no path provided, can't cache - just open directly
+  if (!path) {
+    return spl.db(arrayBuffer)
+  }
+
+  // Check cache first
+  const cached = dbCache.get(path)
+  if (cached) {
+    cached.refCount++
+    return cached.db
+  }
+
+  // Check if already loading - wait for it and increment refCount
+  const loadingPromise = dbLoadPromises.get(path)
+  if (loadingPromise) {
+    const db = await loadingPromise
+    // Increment refCount for this caller
+    const nowCached = dbCache.get(path)
+    if (nowCached) {
+      nowCached.refCount++
+    }
+    return db
+  }
+
+  // Load and cache
+  const loadPromise = (async () => {
+    const db = await spl.db(arrayBuffer)
+    dbCache.set(path, { db, refCount: 1, path })
+    dbLoadPromises.delete(path)
+    return db
+  })()
+
+  dbLoadPromises.set(path, loadPromise)
+  return loadPromise
+}
+
+/**
+ * Release a reference to a cached database.
+ * The database is closed when refCount reaches 0.
+ */
+export function releaseDb(path: string): void {
+  const cached = dbCache.get(path)
+  if (!cached) return
+
+  cached.refCount--
+  if (cached.refCount <= 0) {
+    try {
+      if (typeof cached.db.close === 'function') {
+        cached.db.close()
+      }
+    } catch (e) {
+      console.warn(`Failed to close database ${path}:`, e)
+    }
+    dbCache.delete(path)
+  }
+}
+
+/**
+ * Force close all cached databases. Use with caution - only call when
+ * you're sure no maps are using any databases.
+ */
+export function clearAllDbCaches(): void {
+  for (const [path, cached] of dbCache) {
+    try {
+      if (cached.db && typeof cached.db.close === 'function') {
+        cached.db.close()
+      }
+    } catch (e) {
+      console.warn(`Failed to close database ${path}:`, e)
+    }
+  }
+  dbCache.clear()
+  dbLoadPromises.clear()
 }

@@ -7,7 +7,7 @@
  */
 
 import HTTPFileSystem from '../../js/HTTPFileSystem'
-import { FileSystemConfig, DirectoryEntry } from '@/Globals'
+import { FileSystemConfig } from '@/Globals'
 
 /**
  * Interface representing the structure of an AequilibraE project

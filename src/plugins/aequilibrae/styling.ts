@@ -1,20 +1,24 @@
 /**
  * Styling utilities for AequilibraE plugin
- * 
+ *
  * This module provides functions for building visual styles from data.
  * It handles color encoding, size mapping, filtering, and the creation
  * of typed arrays optimized for WebGL rendering.
- * 
+ *
  * @fileoverview Data-Driven Styling System for AequilibraE
  * @author SimWrapper Development Team
  */
 
 import * as cartoColors from 'cartocolor'
-import { RGBA, RGB, ColorStyle, NumericStyle, LayerStyle, BuildArgs, BuildResult } from './types'
+import { RGBA, RGB, ColorStyle, LayerStyle, BuildArgs, BuildResult } from './types'
+
+// Local helper types
+type ColumnProperties = Record<string, any>
+type PropertiesArray = ColumnProperties[]
 
 /**
  * Converts a hex color string to RGB array
- * 
+ *
  * @param hex - Hex color string (with or without #)
  * @returns RGB array [R, G, B] with values 0-255
  */
@@ -25,7 +29,7 @@ const hexToRgb = (hex: string): RGB => {
 
 /**
  * Converts a hex color string to RGBA array
- * 
+ *
  * @param hex - Hex color string (with or without #)
  * @param alpha - Alpha value (0-1), default 1 (opaque)
  * @returns RGBA array [R, G, B, A] with values 0-255
@@ -42,7 +46,7 @@ const hexToRgba = (hex: string, alpha: number = 1): RGBA => {
 
 /**
  * Gets color palette from CartoColor library
- * 
+ *
  * @param name - Name of the color palette (e.g., 'YlGn', 'Viridis')
  * @param numColors - Number of colors needed
  * @returns Array of hex color strings
@@ -60,7 +64,7 @@ const getPaletteColors = (name: string, numColors: number): string[] => {
 
 /**
  * Safely converts a value to number, returning null for invalid values
- * 
+ *
  * @param value - Value to convert to number
  * @returns Number or null if conversion fails
  */
@@ -71,7 +75,7 @@ const toNumber = (value: any): number | null => {
 
 /**
  * Safe minimum function that avoids stack overflow on large arrays
- * 
+ *
  * @param arr - Array of numbers
  * @returns Minimum value, or 0 if array is empty
  */
@@ -86,7 +90,7 @@ const safeMin = (arr: number[]): number => {
 
 /**
  * Safe maximum function that avoids stack overflow on large arrays
- * 
+ *
  * @param arr - Array of numbers
  * @returns Maximum value, or 1 if array is empty
  */
@@ -114,10 +118,7 @@ const buildColorEncoder = (
   }
 
   const nums = values.map(toNumber).filter((v): v is number => v !== null)
-  const [min, max] =
-    'range' in style && style.range
-      ? style.range
-      : [safeMin(nums), safeMax(nums)]
+  const [min, max] = 'range' in style && style.range ? style.range : [safeMin(nums), safeMax(nums)]
 
   const paletteName = 'palette' in style ? style.palette : 'YlGn'
   const numColors = 'numColors' in style ? style.numColors : 7
@@ -152,7 +153,6 @@ const applyQuantitativeMapping = (
   stride: number,
   offset: number
 ) => {
-  const nums = values.filter((v): v is number => v !== null)
   const [dataMin, dataMax] = dataRange
   const [outMin, outMax] = outputRange
   const scale = dataMax === dataMin ? 0 : 1 / (dataMax - dataMin)
@@ -168,12 +168,125 @@ const applyQuantitativeMapping = (
 }
 
 /**
+ * Apply a static value to all features at given indices
+ * Common pattern for setting color, width, height, radius
+ */
+const applyStaticValue = <T extends number[] | Uint8ClampedArray | Float32Array>(
+  indices: number[],
+  value: T extends Uint8ClampedArray ? RGBA | RGB : number,
+  target: T,
+  stride: number = 1,
+  offset: number = 0
+) => {
+  for (let j = 0; j < indices.length; j++) {
+    const i = indices[j]
+    if (Array.isArray(value)) {
+      // For color arrays (RGB/RGBA)
+      for (let k = 0; k < value.length; k++) {
+        target[i * stride + offset + k] = value[k]
+      }
+    } else {
+      // For numeric values
+      target[i * stride + offset] = value as any
+    }
+  }
+}
+
+/**
+ * Apply an encoder function to features, mapping values from properties
+ */
+const applyEncodedValue = <T extends number[] | Uint8ClampedArray | Float32Array>(
+  indices: number[],
+  properties: any[],
+  column: string,
+  encoder: (value: any) => T extends Uint8ClampedArray ? RGBA | RGB : number,
+  target: T,
+  stride: number = 1,
+  offset: number = 0
+) => {
+  for (let j = 0; j < indices.length; j++) {
+    const i = indices[j]
+    const encoded = encoder(properties[j]?.[column])
+    if (Array.isArray(encoded)) {
+      // For color arrays
+      for (let k = 0; k < encoded.length; k++) {
+        target[i * stride + offset + k] = encoded[k]
+      }
+    } else {
+      // For numeric values
+      target[i * stride + offset] = encoded as any
+    }
+  }
+}
+
+/**
+ * Apply a static numeric value to features at given indices
+ */
+const applyStaticNumeric = (indices: number[], value: number, target: Float32Array) => {
+  for (let j = 0; j < indices.length; j++) {
+    target[indices[j]] = value
+  }
+}
+
+/**
+ * Apply numeric values from an array to features at given indices
+ */
+const applyNumericArray = (
+  indices: number[],
+  values: (number | undefined)[],
+  target: Float32Array,
+  defaultValue: number
+) => {
+  for (let j = 0; j < indices.length; j++) {
+    target[indices[j]] = values[j] ?? defaultValue
+  }
+}
+
+/**
+ * Apply category-based numeric mapping
+ */
+const applyNumericCategory = (
+  indices: number[],
+  properties: any[],
+  column: string,
+  mapping: Record<any, number>,
+  target: Float32Array,
+  defaultValue: number
+) => {
+  for (let j = 0; j < indices.length; j++) {
+    const v = properties[j]?.[column]
+    target[indices[j]] = mapping[v] ?? defaultValue
+  }
+}
+
+/**
+ * Apply feature filter based on include/exclude lists
+ */
+const applyFeatureFilter = (
+  indices: number[],
+  properties: any[],
+  column: string,
+  include: any[] | undefined,
+  exclude: any[] | undefined,
+  target: Float32Array
+) => {
+  for (let j = 0; j < indices.length; j++) {
+    const i = indices[j]
+    const v = properties[j]?.[column]
+    let visible = true
+    if (include && include.length) visible = include.includes(v)
+    if (exclude && exclude.length) visible = visible && !exclude.includes(v)
+    target[i] = visible ? 1 : 0
+  }
+}
+
+/**
  * Builds typed arrays for efficient WebGL rendering from feature data and styling rules
- * 
+ *
  * This is the main function that converts GeoJSON features and layer styling
  * configurations into the typed arrays needed for high-performance map rendering.
  * It handles color encoding, size mapping, filtering, and optimization for GPU rendering.
- * 
+ *
  * @param args - Build arguments containing features, layer configs, and defaults
  * @returns BuildResult with typed arrays ready for WebGL rendering
  */
@@ -224,7 +337,7 @@ export function buildStyleArrays(args: BuildArgs): BuildResult {
   }
 
   // Apply per-layer styles
-  for (const [layerName, bucket] of buckets.entries()) {
+  for (const bucket of buckets.values()) {
     const style = bucket.style
     const idxs = bucket.idxs
     const propsArr = bucket.props
@@ -236,28 +349,17 @@ export function buildStyleArrays(args: BuildArgs): BuildResult {
       const col = (style.filter as any).column
       const include: any[] | undefined = (style.filter as any).include
       const exclude: any[] | undefined = (style.filter as any).exclude
-      for (let j = 0; j < idxs.length; j++) {
-        const i = idxs[j]
-        const v = propsArr[j]?.[col]
-        let visible = true
-        if (include && include.length) visible = include.includes(v)
-        if (exclude && exclude.length) visible = visible && !exclude.includes(v)
-        featureFilter[i] = visible ? 1 : 0
-      }
+      applyFeatureFilter(idxs, propsArr, col, include, exclude, featureFilter)
     }
 
     if (style.fillColor) {
       if (typeof style.fillColor === 'string') {
         // Static hex color
         const color = hexToRgba(style.fillColor, 1)
-        for (let j = 0; j < idxs.length; j++) {
-          fillColors.set(color, idxs[j] * 4)
-        }
+        applyStaticValue(idxs, color, fillColors, 4, 0)
       } else if ('colors' in style.fillColor) {
         const encoder = buildCategoryEncoder(style.fillColor.colors, '#808080')
-        for (let j = 0; j < idxs.length; j++) {
-          fillColors.set(encoder(propsArr[j]?.[style.fillColor.column]), idxs[j] * 4)
-        }
+        applyEncodedValue(idxs, propsArr, style.fillColor.column, encoder, fillColors, 4, 0)
       } else if ('column' in style.fillColor) {
         // Column-based encoding
         const encoder = buildColorEncoder(
@@ -265,9 +367,7 @@ export function buildStyleArrays(args: BuildArgs): BuildResult {
           style.fillColor,
           style.fillColor.dataRange
         )
-        for (let j = 0; j < idxs.length; j++) {
-          fillColors.set(encoder(propsArr[j]?.[style.fillColor.column]), idxs[j] * 4)
-        }
+        applyEncodedValue(idxs, propsArr, style.fillColor.column, encoder, fillColors, 4, 0)
       }
     }
 
@@ -275,16 +375,10 @@ export function buildStyleArrays(args: BuildArgs): BuildResult {
       if (typeof style.lineColor === 'string') {
         // Static hex color
         const rgb = hexToRgb(style.lineColor)
-        for (let j = 0; j < idxs.length; j++) {
-          lineColors[idxs[j] * 3] = rgb[0]
-          lineColors[idxs[j] * 3 + 1] = rgb[1]
-          lineColors[idxs[j] * 3 + 2] = rgb[2]
-        }
+        applyStaticValue(idxs, rgb, lineColors, 3, 0)
       } else if ('colors' in style.lineColor) {
         const encoder = buildCategoryEncoder(style.lineColor.colors, '#808080')
-        for (let j = 0; j < idxs.length; j++) {
-          lineColors.set(encoder(propsArr[j]?.[style.lineColor.column]), idxs[j] * 3)
-        }
+        applyEncodedValue(idxs, propsArr, style.lineColor.column, encoder, lineColors, 3, 0)
       } else if ('column' in style.lineColor) {
         // Column-based encoding
         const encoder = buildColorEncoder(
@@ -292,37 +386,30 @@ export function buildStyleArrays(args: BuildArgs): BuildResult {
           style.lineColor,
           style.lineColor.dataRange
         )
-        for (let j = 0; j < idxs.length; j++) {
-          const [r, g, b] = encoder(propsArr[j]?.[style.lineColor.column])
-          lineColors[idxs[j] * 3] = r
-          lineColors[idxs[j] * 3 + 1] = g
-          lineColors[idxs[j] * 3 + 2] = b
-        }
+        applyEncodedValue(idxs, propsArr, style.lineColor.column, encoder, lineColors, 3, 0)
       }
     }
 
     // lineWidth - handle static, array, category, and column-based
     if (style.lineWidth) {
       if (Array.isArray(style.lineWidth)) {
-        // Assign each width in the array to the corresponding feature
-        for (let j = 0; j < idxs.length; j++) {
-          lineWidths[idxs[j]] = style.lineWidth[j] ?? defaultWidth
-        }
+        applyNumericArray(idxs, style.lineWidth, lineWidths, defaultWidth)
       } else if (typeof style.lineWidth === 'number') {
-        for (let j = 0; j < idxs.length; j++) {
-          lineWidths[idxs[j]] = style.lineWidth
-        }
+        applyStaticNumeric(idxs, style.lineWidth, lineWidths)
       } else if (
         typeof style.lineWidth === 'object' &&
         'widths' in style.lineWidth &&
         'column' in style.lineWidth
       ) {
         // Category-based mapping: { column, widths }
-        const widthMap = style.lineWidth.widths || {}
-        for (let j = 0; j < idxs.length; j++) {
-          const v = propsArr[j]?.[style.lineWidth.column]
-          lineWidths[idxs[j]] = widthMap[v] ?? defaultWidth
-        }
+        applyNumericCategory(
+          idxs,
+          propsArr,
+          style.lineWidth.column,
+          style.lineWidth.widths || {},
+          lineWidths,
+          defaultWidth
+        )
       } else if ('column' in style.lineWidth) {
         const values = propsArr.map(p => toNumber(p?.[style.lineWidth!.column]))
         applyQuantitativeMapping(
@@ -339,9 +426,7 @@ export function buildStyleArrays(args: BuildArgs): BuildResult {
     // pointRadius - handle both static and column-based
     if (style.pointRadius) {
       if (typeof style.pointRadius === 'number') {
-        for (let j = 0; j < idxs.length; j++) {
-          pointRadii[idxs[j]] = style.pointRadius
-        }
+        applyStaticNumeric(idxs, style.pointRadius, pointRadii)
       } else if ('column' in style.pointRadius) {
         const values = propsArr.map(p => toNumber(p?.[style.pointRadius!.column]))
         applyQuantitativeMapping(
@@ -358,9 +443,7 @@ export function buildStyleArrays(args: BuildArgs): BuildResult {
     // fillHeight - handle both static and column-based
     if (style.fillHeight) {
       if (typeof style.fillHeight === 'number') {
-        for (let j = 0; j < idxs.length; j++) {
-          fillHeights[idxs[j]] = style.fillHeight
-        }
+        applyStaticNumeric(idxs, style.fillHeight, fillHeights)
       } else if ('column' in style.fillHeight) {
         const values = propsArr.map(p => toNumber(p?.[style.fillHeight!.column]))
         applyQuantitativeMapping(

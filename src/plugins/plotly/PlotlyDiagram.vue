@@ -271,7 +271,7 @@ const MyComponent = defineComponent({
         if (this.traces[i].xaxis_min !== undefined && this.traces[i].xaxis_min < this.minXValue)
           this.minXValue = this.traces[i].xaxis_min
         if (this.traces[i].yaxis_min !== undefined && this.traces[i].yaxis_min < this.minYValue)
-          this.minYValue = this.traces[i].yaxis_min 
+          this.minYValue = this.traces[i].yaxis_min
       }
 
       // Set the x-axis and y-axis ranges in the layout based on the calculated 'minXValue', 'maxXValue', 'minYValue', and 'maxYValue'.
