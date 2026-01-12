@@ -234,16 +234,35 @@ const MyComponent = defineComponent({
       }
     },
 
+    /**
+     * Computes default geometry loading limits based on how many maps are loading concurrently.
+     *
+     * @param totalMaps Number of AequilibraE map panels currently loading.
+     * @returns autoLimit        - Maximum number of geometries/features to load per map (unit: feature count).
+     *          autoPrecision    - Coordinate decimal precision used when building geometries.
+     *
+     * Heuristic rationale:
+     * - When many maps are loading at once, we lower the per-map geometry cap and (in some cases)
+     *   coordinate precision to reduce peak memory use and GC pressure.
+     * - The numeric thresholds below (3, 5, 8 maps) and limits (25k, 40k, 60k, 100k features) are
+     *   empirically chosen trade‑offs between visual detail and memory usage on typical datasets.
+     */
     getMemoryLimits(totalMaps: number): { autoLimit: number; autoPrecision: number } {
+      // Base case: few or single map(s) loading, allow up to ~100k features with standard precision.
       let autoLimit = 100000,
         autoPrecision = 5
+
       if (totalMaps >= 8) {
+        // Heavy concurrency (8+ maps): aggressively cap features to 25k to keep total memory low and
+        // slightly reduce coordinate precision to 4 decimals (~11 m at equator) to further save memory.
         autoLimit = 25000
         autoPrecision = 4
       } else if (totalMaps >= 5) {
+        // Medium-high concurrency (5–7 maps): cap at 40k features per map and use 4-decimal precision.
         autoLimit = 40000
         autoPrecision = 4
       } else if (totalMaps >= 3) {
+        // Moderate concurrency (3–4 maps): cap at 60k features with standard 5-decimal precision.
         autoLimit = 60000
         autoPrecision = 5
       }
@@ -267,8 +286,7 @@ const MyComponent = defineComponent({
             const blob = await this.aeqFileSystem.getFileBlob(path)
             arrayBuffer = await blob.arrayBuffer()
             arrayBuffer = getCachedFileBuffer(path, arrayBuffer)
-          } else {
-            // using cached file
+
           }
 
           // Cache extra databases by passing the path - multiple panels may use the same results database
@@ -280,18 +298,7 @@ const MyComponent = defineComponent({
       }
     },
 
-    applyStyles(styles: ReturnType<typeof buildStyleArrays>): void {
-      Object.assign(this, {
-        fillColors: styles.fillColors,
-        lineColors: styles.lineColors,
-        lineWidths: styles.lineWidths,
-        pointRadii: styles.pointRadii,
-        fillHeights: styles.fillHeights,
-        featureFilter: styles.featureFilter,
-        isRGBA: true,
-        redrawCounter: this.redrawCounter + 1,
-      })
-    },
+
     releaseMainDatabase(): void {
       releaseMainDbFromVm(this)
     },
@@ -365,7 +372,7 @@ const MyComponent = defineComponent({
         .join(',')
     },
     handleFeatureClick(feature: any): void {
-      // click handler - intentionally no debug logging
+      // TODO: Implement feature click behavior (e.g., selection or details view). Currently an intentional no-op.
     },
     handleTooltip(hoverInfo: any): string {
       const props = hoverInfo?.object?.properties

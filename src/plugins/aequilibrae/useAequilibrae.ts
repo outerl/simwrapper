@@ -15,12 +15,7 @@ import {
   getTableSchema,
   getRowCount,
   fetchGeoJSONFeatures,
-  queryTable,
   getCachedJoinData,
-  getCachedFile,
-  getCachedFileBuffer,
-  openDb,
-  releaseDb,
 } from './db'
 
 export { getCachedFileBuffer, hasCachedFile, getCachedFile, openDb, releaseDb } from './db'
@@ -119,12 +114,47 @@ export async function initSql(): Promise<SPLType> {
 /**
  * Release a reference to the shared SPL engine.
  * Call this when a map component is unmounted.
+ *
+ * When the reference count reaches 0 we drop our references to the
+ * shared SPL instance (and invoke an optional cleanup method if present)
+ * so that long‑running applications do not leak memory. The engine will
+ * be re‑initialized on the next call to {@link initSql}.
  */
 export function releaseSql(): void {
   splRefCount = Math.max(0, splRefCount - 1)
-  // We keep the SPL engine alive even when refCount hits 0
-  // because it's expensive to reinitialize. It will be GC'd
-  // when the page is unloaded.
+
+  if (splRefCount > 0) {
+    // Still in use somewhere else; keep the shared engine alive.
+    return
+  }
+
+  if (sharedSpl) {
+    // If the SPL instance exposes a cleanup/close API, call it defensively.
+    const maybeAny = sharedSpl as any
+    if (maybeAny && typeof maybeAny.close === 'function') {
+      try {
+        maybeAny.close()
+      } catch {
+        // Swallow errors from optional cleanup to avoid breaking callers.
+      }
+    } else if (maybeAny && typeof maybeAny.destroy === 'function') {
+      try {
+        maybeAny.destroy()
+      } catch {
+        // Ignore cleanup errors.
+      }
+    } else if (maybeAny && typeof maybeAny.terminate === 'function') {
+      try {
+        maybeAny.terminate()
+      } catch {
+        // Ignore cleanup errors.
+      }
+    }
+  }
+
+  // Drop references so the SPL engine can be garbage‑collected.
+  sharedSpl = null
+  splInitPromise = null
 }
 
 export async function parseYamlConfig(
@@ -276,8 +306,7 @@ export async function buildGeoFeatures(
           if (extraDb) {
             // Centralized function will handle its own caching
             joinedData = await getCachedJoinData(extraDb, joinConfig, neededColumn)
-            const colInfo = neededColumn ? ` (column: ${neededColumn})` : ''
-            // Loaded joined data successfully (verbose log removed)
+
           } else {
             console.warn(
               `⚠️ Extra database '${joinConfig.database}' not found for layer '${layerName}'`

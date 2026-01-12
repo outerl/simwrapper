@@ -1,7 +1,7 @@
 // Type definitions for AequilibraE plugin (layers, styles, DB, runtime types)
 
 /** Supported geometry types for spatial data visualization */
-/** Supported geometry types for spatial data visualization */
+
 export type GeometryType = 'polygon' | 'line' | 'point'
 
 /**
