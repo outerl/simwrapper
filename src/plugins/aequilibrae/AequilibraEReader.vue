@@ -8,7 +8,7 @@
 </template>
 
 <script lang="ts">
-import { defineComponent, markRaw } from 'vue'
+import { defineComponent } from 'vue'
 import { i18n } from './i18n'
 import globalStore from '@/store'
 import { FileSystemConfig } from '@/Globals'
@@ -28,12 +28,12 @@ import {
   hasCachedFile,
   getCachedFile,
 } from './useAequilibrae'
-import { buildStyleArrays } from './styling'
 import { resolvePath } from './utils'
 import DeckMapComponent from '@/plugins/shape-file/DeckMapComponent.vue'
 import LegendColors from '@/components/LegendColors.vue'
 import BackgroundLayers from '@/js/BackgroundLayers'
 import type { LayerConfig, VizDetails } from './types'
+import { applyStylesToVm, loadDbWithCache, releaseMainDbFromVm } from './readerHelpers'
 
 const MyComponent = defineComponent({
   name: 'AequilibraEReader',
@@ -166,18 +166,15 @@ const MyComponent = defineComponent({
           throw new Error('No database path specified in configuration')
         }
 
-        // Check cache first to avoid re-downloading from S3
-        let arrayBuffer: ArrayBuffer | null = getCachedFile(this.dbPath)
-        if (!arrayBuffer) {
-          const blob = await this.aeqFileSystem.getFileBlob(this.dbPath)
-          arrayBuffer = await blob.arrayBuffer()
-          arrayBuffer = getCachedFileBuffer(this.dbPath, arrayBuffer)
-        } else {
-          // using cached file
-        }
-
-        // Pass path to enable database caching across multiple maps
-        this.db = await openDb(this.spl, arrayBuffer, this.dbPath)
+        // Use helper that handles cache logic
+        this.db = await loadDbWithCache(
+          this.spl,
+          this.aeqFileSystem,
+          getCachedFile,
+          getCachedFileBuffer,
+          openDb,
+          this.dbPath
+        )
 
         this.loadingText = 'Reading tables...'
         const { tables, hasGeometry } = await buildTables(this.db, this.layerConfigs)
@@ -229,16 +226,7 @@ const MyComponent = defineComponent({
         // Give GC a chance to run before building styles
         await new Promise(resolve => setTimeout(resolve, 10))
 
-        // Use markRaw to prevent Vue reactivity on large datasets
-        this.geoJsonFeatures = markRaw(features)
-
-        const styles = buildStyleArrays({
-          features: this.geoJsonFeatures,
-          layers: this.layerConfigs,
-          defaults: this.vizDetails.defaults,
-        })
-
-        this.applyStyles(styles)
+        applyStylesToVm(this, features, this.vizDetails, this.layerConfigs)
       } catch (error) {
         throw new Error(
           `Failed to extract geometries: ${error instanceof Error ? error.message : String(error)}`
@@ -305,10 +293,7 @@ const MyComponent = defineComponent({
       })
     },
     releaseMainDatabase(): void {
-      // Don't release database - keep it cached for reuse by other panels
-      // since databases are expensive to fetch from S3
-      this.db = null
-      this.tables = []
+      releaseMainDbFromVm(this)
     },
     cleanupMemory(): void {
       this.releaseMainDatabase()

@@ -1,16 +1,4 @@
-/**
- * Type definitions for the AequilibraE plugin
- *
- * This file contains all TypeScript interfaces and types used throughout
- * the AequilibraE visualization plugin. It defines data structures for:
- * - Spatial data configuration
- * - Styling and rendering options
- * - Database joining operations
- * - Memory optimization settings
- *
- * @fileoverview AequilibraE Plugin Type Definitions
- * @author SimWrapper Development Team
- */
+// Type definitions for AequilibraE plugin (layers, styles, DB, runtime types)
 
 /** Supported geometry types for spatial data visualization */
 /** Supported geometry types for spatial data visualization */

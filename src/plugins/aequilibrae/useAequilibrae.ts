@@ -1,19 +1,4 @@
-/**
- * Core utilities and hooks for AequilibraE plugin
- *
- * This module provides the main data loading and processing functions
- * for AequilibraE visualizations. It includes memory management,
- * database caching, loading queue management, and GeoJSON feature building.
- *
- * Key features:
- * - Shared SPL engine to reduce memory usage
- * - Database caching across multiple maps
- * - Loading queue to prevent memory exhaustion
- * - Memory optimization for large datasets
- *
- * @fileoverview Core AequilibraE Data Processing Functions
- * @author SimWrapper Development Team
- */
+// Core utilities for AequilibraE plugin: loading, caching and feature building
 
 import SPL from 'spl.js'
 import YAML from 'yaml'

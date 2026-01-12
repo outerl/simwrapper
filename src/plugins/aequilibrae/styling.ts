@@ -1,14 +1,3 @@
-/**
- * Styling utilities for AequilibraE plugin
- *
- * This module provides functions for building visual styles from data.
- * It handles color encoding, size mapping, filtering, and the creation
- * of typed arrays optimized for WebGL rendering.
- *
- * @fileoverview Data-Driven Styling System for AequilibraE
- * @author SimWrapper Development Team
- */
-
 import * as cartoColors from 'cartocolor'
 import { RGBA, RGB, ColorStyle, LayerStyle, BuildArgs, BuildResult } from './types'
 
@@ -16,33 +5,23 @@ import { RGBA, RGB, ColorStyle, LayerStyle, BuildArgs, BuildResult } from './typ
 type ColumnProperties = Record<string, any>
 type PropertiesArray = ColumnProperties[]
 
-/**
- * Converts a hex color string to RGB array
- *
- * @param hex - Hex color string (with or without #)
- * @returns RGB array [R, G, B] with values 0-255
- */
-const hexToRgb = (hex: string): RGB => {
-  const match = hex.replace('#', '').match(/.{1,2}/g) || ['80', '80', '80']
-  return [parseInt(match[0], 16), parseInt(match[1], 16), parseInt(match[2], 16)]
-}
-
-/**
- * Converts a hex color string to RGBA array
- *
- * @param hex - Hex color string (with or without #)
- * @param alpha - Alpha value (0-1), default 1 (opaque)
- * @returns RGBA array [R, G, B, A] with values 0-255
- */
-const hexToRgba = (hex: string, alpha: number = 1): RGBA => {
-  const match = hex.replace('#', '').match(/.{1,2}/g) || ['80', '80', '80']
+// Unified hex -> RGB(A) parser
+const hexToRgbA = (hex: string, alpha: number = 1): RGBA => {
+  const bytes = hex.replace('#', '').match(/.{1,2}/g) || ['80', '80', '80']
   return [
-    parseInt(match[0], 16),
-    parseInt(match[1], 16),
-    parseInt(match[2], 16),
+    parseInt(bytes[0], 16),
+    parseInt(bytes[1], 16),
+    parseInt(bytes[2], 16),
     Math.round(alpha * 255),
   ]
 }
+
+const hexToRgb = (hex: string): RGB => {
+  const rgba = hexToRgbA(hex, 1)
+  return [rgba[0], rgba[1], rgba[2]]
+}
+
+const hexToRgba = (hex: string, alpha: number = 1): RGBA => hexToRgbA(hex, alpha)
 
 /**
  * Gets color palette from CartoColor library
@@ -105,11 +84,10 @@ const safeMax = (arr: number[]): number => {
 
 const buildColorEncoder = (
   values: any[],
-  style: ColorStyle,
+  style: any,
   dataRange: [number, number] | null = null
 ) => {
   if (dataRange) {
-    // clamp the values to within the data range
     values = values.map(v => {
       const num = toNumber(v)
       if (num === null) return null
@@ -118,11 +96,12 @@ const buildColorEncoder = (
   }
 
   const nums = values.map(toNumber).filter((v): v is number => v !== null)
-  const [min, max] = 'range' in style && style.range ? style.range : [safeMin(nums), safeMax(nums)]
+  const s = style || {}
+  const [min, max] = s.range ? s.range : [safeMin(nums), safeMax(nums)]
 
-  const paletteName = 'palette' in style ? style.palette : 'YlGn'
-  const numColors = 'numColors' in style ? style.numColors : 7
-  const colors = getPaletteColors(paletteName, numColors).map(h => hexToRgba(h, 1))
+  const paletteName = s.palette || 'YlGn'
+  const numColors = s.numColors || 7
+  const colors = getPaletteColors(paletteName, numColors).map((h: string) => hexToRgba(h, 1))
 
   const scale = max === min ? 0 : (numColors - 1) / (max - min)
 
@@ -136,13 +115,11 @@ const buildColorEncoder = (
 const buildCategoryEncoder = (colors: Record<string, string>, defaultColor: string = '#808080') => {
   const colorMap = new Map<string, RGBA>()
   for (const [key, hex] of Object.entries(colors)) {
-    colorMap.set(String(key), hexToRgb(hex))
+    colorMap.set(String(key), hexToRgbA(hex, 1))
   }
-  const defaultRgba = hexToRgb(defaultColor)
+  const defaultRgba = hexToRgbA(defaultColor, 1)
 
-  return (value: any) => {
-    return colorMap.get(String(value)) || defaultRgba
-  }
+  return (value: any) => colorMap.get(String(value)) || defaultRgba
 }
 
 const applyQuantitativeMapping = (
@@ -167,10 +144,23 @@ const applyQuantitativeMapping = (
   }
 }
 
-/**
- * Apply a static value to all features at given indices
- * Common pattern for setting color, width, height, radius
- */
+// Helper to write either a scalar or an array value into a typed array
+function writeValue(
+  target: ArrayLike<number>,
+  baseIndex: number,
+  stride: number,
+  offset: number,
+  value: number | number[]
+) {
+  if (Array.isArray(value)) {
+    for (let k = 0; k < value.length; k++) {
+      ;(target as any)[baseIndex + stride * 0 + offset + k] = value[k]
+    }
+  } else {
+    ;(target as any)[baseIndex + offset] = value
+  }
+}
+
 const applyStaticValue = <T extends number[] | Uint8ClampedArray | Float32Array>(
   indices: number[],
   value: T extends Uint8ClampedArray ? RGBA | RGB : number,
@@ -179,22 +169,11 @@ const applyStaticValue = <T extends number[] | Uint8ClampedArray | Float32Array>
   offset: number = 0
 ) => {
   for (let j = 0; j < indices.length; j++) {
-    const i = indices[j]
-    if (Array.isArray(value)) {
-      // For color arrays (RGB/RGBA)
-      for (let k = 0; k < value.length; k++) {
-        target[i * stride + offset + k] = value[k]
-      }
-    } else {
-      // For numeric values
-      target[i * stride + offset] = value as any
-    }
+    const base = indices[j] * stride
+    writeValue(target, base, 1, offset, value as any)
   }
 }
 
-/**
- * Apply an encoder function to features, mapping values from properties
- */
 const applyEncodedValue = <T extends number[] | Uint8ClampedArray | Float32Array>(
   indices: number[],
   properties: any[],
@@ -205,41 +184,39 @@ const applyEncodedValue = <T extends number[] | Uint8ClampedArray | Float32Array
   offset: number = 0
 ) => {
   for (let j = 0; j < indices.length; j++) {
-    const i = indices[j]
-    const encoded = encoder(properties[j]?.[column])
-    if (Array.isArray(encoded)) {
-      // For color arrays
-      for (let k = 0; k < encoded.length; k++) {
-        target[i * stride + offset + k] = encoded[k]
-      }
-    } else {
-      // For numeric values
-      target[i * stride + offset] = encoded as any
-    }
+    const base = indices[j] * stride
+    const encoded = encoder(properties[j]?.[column]) as any
+    writeValue(target, base, 1, offset, encoded)
   }
 }
 
-/**
- * Apply a static numeric value to features at given indices
- */
 const applyStaticNumeric = (indices: number[], value: number, target: Float32Array) => {
-  for (let j = 0; j < indices.length; j++) {
-    target[indices[j]] = value
-  }
+  applyStaticValue(indices, value as any, target as any, 1, 0)
 }
 
 /**
  * Apply numeric values from an array to features at given indices
  */
+// Unified numeric writer: writes a scalar or array value into a Float32Array
+const writeNumeric = (
+  target: Float32Array,
+  indices: number[],
+  getValue: (i: number) => number | undefined,
+  defaultValue: number
+) => {
+  for (let j = 0; j < indices.length; j++) {
+    const value = getValue(j)
+    target[indices[j]] = value ?? defaultValue
+  }
+}
+
 const applyNumericArray = (
   indices: number[],
   values: (number | undefined)[],
   target: Float32Array,
   defaultValue: number
 ) => {
-  for (let j = 0; j < indices.length; j++) {
-    target[indices[j]] = values[j] ?? defaultValue
-  }
+  writeNumeric(target, indices, i => values[i], defaultValue)
 }
 
 /**
@@ -253,10 +230,7 @@ const applyNumericCategory = (
   target: Float32Array,
   defaultValue: number
 ) => {
-  for (let j = 0; j < indices.length; j++) {
-    const v = properties[j]?.[column]
-    target[indices[j]] = mapping[v] ?? defaultValue
-  }
+  writeNumeric(target, indices, i => mapping[properties[i]?.[column]], defaultValue)
 }
 
 /**
@@ -337,7 +311,7 @@ export function buildStyleArrays(args: BuildArgs): BuildResult {
   }
 
   // Apply per-layer styles
-  for (const bucket of buckets.values()) {
+  for (const bucket of Array.from(buckets.values())) {
     const style = bucket.style
     const idxs = bucket.idxs
     const propsArr = bucket.props
@@ -352,70 +326,67 @@ export function buildStyleArrays(args: BuildArgs): BuildResult {
       applyFeatureFilter(idxs, propsArr, col, include, exclude, featureFilter)
     }
 
-    if (style.fillColor) {
-      if (typeof style.fillColor === 'string') {
-        // Static hex color
-        const color = hexToRgba(style.fillColor, 1)
-        applyStaticValue(idxs, color, fillColors, 4, 0)
-      } else if ('colors' in style.fillColor) {
-        const encoder = buildCategoryEncoder(style.fillColor.colors, '#808080')
-        applyEncodedValue(idxs, propsArr, style.fillColor.column, encoder, fillColors, 4, 0)
-      } else if ('column' in style.fillColor) {
-        // Column-based encoding
-        const encoder = buildColorEncoder(
-          propsArr.map(p => p?.[style.fillColor!.column]),
-          style.fillColor,
-          style.fillColor.dataRange
+    // Helper to apply color style to a target typed array
+    const applyColorStyle = (
+      idxs: number[],
+      propsArr: any[],
+      styleVal: any,
+      target: Uint8ClampedArray,
+      stride: number,
+      offset: number,
+      defaultHex: string
+    ) => {
+      if (!styleVal) return
+      if (typeof styleVal === 'string') {
+        const color = stride === 3 ? hexToRgb(styleVal) : hexToRgba(styleVal, 1)
+        applyStaticValue(idxs, color as any, target as any, stride, offset)
+      } else if ('colors' in styleVal) {
+        const encoder = buildCategoryEncoder(styleVal.colors, '#808080')
+        applyEncodedValue(
+          idxs,
+          propsArr,
+          styleVal.column,
+          encoder as any,
+          target as any,
+          stride,
+          offset
         )
-        applyEncodedValue(idxs, propsArr, style.fillColor.column, encoder, fillColors, 4, 0)
+      } else if ('column' in styleVal) {
+        const encoder = buildColorEncoder(
+          propsArr.map((p: any) => p?.[styleVal.column]),
+          styleVal,
+          styleVal.dataRange
+        )
+        applyEncodedValue(
+          idxs,
+          propsArr,
+          styleVal.column,
+          encoder as any,
+          target as any,
+          stride,
+          offset
+        )
       }
     }
 
-    if (style.lineColor) {
-      if (typeof style.lineColor === 'string') {
-        // Static hex color
-        const rgb = hexToRgb(style.lineColor)
-        applyStaticValue(idxs, rgb, lineColors, 3, 0)
-      } else if ('colors' in style.lineColor) {
-        const encoder = buildCategoryEncoder(style.lineColor.colors, '#808080')
-        applyEncodedValue(idxs, propsArr, style.lineColor.column, encoder, lineColors, 3, 0)
-      } else if ('column' in style.lineColor) {
-        // Column-based encoding
-        const encoder = buildColorEncoder(
-          propsArr.map(p => p?.[style.lineColor!.column]),
-          style.lineColor,
-          style.lineColor.dataRange
-        )
-        applyEncodedValue(idxs, propsArr, style.lineColor.column, encoder, lineColors, 3, 0)
-      }
-    }
+    applyColorStyle(idxs, propsArr, style.fillColor, fillColors, 4, 0, '#808080')
+    applyColorStyle(idxs, propsArr, style.lineColor, lineColors, 3, 0, '#808080')
 
     // lineWidth - handle static, array, category, and column-based
     if (style.lineWidth) {
-      if (Array.isArray(style.lineWidth)) {
-        applyNumericArray(idxs, style.lineWidth, lineWidths, defaultWidth)
-      } else if (typeof style.lineWidth === 'number') {
-        applyStaticNumeric(idxs, style.lineWidth, lineWidths)
-      } else if (
-        typeof style.lineWidth === 'object' &&
-        'widths' in style.lineWidth &&
-        'column' in style.lineWidth
-      ) {
-        // Category-based mapping: { column, widths }
-        applyNumericCategory(
-          idxs,
-          propsArr,
-          style.lineWidth.column,
-          style.lineWidth.widths || {},
-          lineWidths,
-          defaultWidth
-        )
-      } else if ('column' in style.lineWidth) {
-        const values = propsArr.map(p => toNumber(p?.[style.lineWidth!.column]))
+      const lw = style.lineWidth as any
+      if (Array.isArray(lw)) {
+        applyNumericArray(idxs, lw, lineWidths, defaultWidth)
+      } else if (typeof lw === 'number') {
+        applyStaticNumeric(idxs, lw, lineWidths)
+      } else if (typeof lw === 'object' && 'widths' in lw && 'column' in lw) {
+        applyNumericCategory(idxs, propsArr, lw.column, lw.widths || {}, lineWidths, defaultWidth)
+      } else if ('column' in lw) {
+        const values = propsArr.map((p: any) => toNumber(p?.[lw.column]))
         applyQuantitativeMapping(
           values,
-          style.lineWidth.dataRange ?? [1, 6],
-          style.lineWidth.widthRange ?? [1, 6],
+          lw.dataRange ?? [1, 6],
+          lw.widthRange ?? [1, 6],
           lineWidths,
           1,
           0
@@ -425,14 +396,15 @@ export function buildStyleArrays(args: BuildArgs): BuildResult {
 
     // pointRadius - handle both static and column-based
     if (style.pointRadius) {
-      if (typeof style.pointRadius === 'number') {
-        applyStaticNumeric(idxs, style.pointRadius, pointRadii)
-      } else if ('column' in style.pointRadius) {
-        const values = propsArr.map(p => toNumber(p?.[style.pointRadius!.column]))
+      const pr = style.pointRadius as any
+      if (typeof pr === 'number') {
+        applyStaticNumeric(idxs, pr, pointRadii)
+      } else if ('column' in pr) {
+        const values = propsArr.map((p: any) => toNumber(p?.[pr.column]))
         applyQuantitativeMapping(
           values,
-          style.pointRadius.dataRange ?? [2, 12],
-          style.pointRadius.widthRange ?? [2, 12],
+          pr.dataRange ?? [2, 12],
+          pr.widthRange ?? [2, 12],
           pointRadii,
           1,
           0
@@ -442,14 +414,15 @@ export function buildStyleArrays(args: BuildArgs): BuildResult {
 
     // fillHeight - handle both static and column-based
     if (style.fillHeight) {
-      if (typeof style.fillHeight === 'number') {
-        applyStaticNumeric(idxs, style.fillHeight, fillHeights)
-      } else if ('column' in style.fillHeight) {
-        const values = propsArr.map(p => toNumber(p?.[style.fillHeight!.column]))
+      const fh = style.fillHeight as any
+      if (typeof fh === 'number') {
+        applyStaticNumeric(idxs, fh, fillHeights)
+      } else if ('column' in fh) {
+        const values = propsArr.map((p: any) => toNumber(p?.[fh.column]))
         applyQuantitativeMapping(
           values,
-          style.fillHeight.dataRange ?? [0, 100],
-          style.fillHeight.widthRange ?? [0, 100],
+          fh.dataRange ?? [0, 100],
+          fh.widthRange ?? [0, 100],
           fillHeights,
           1,
           0

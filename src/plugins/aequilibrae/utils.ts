@@ -1,16 +1,4 @@
-/**
- * Shared utilities for AequilibraE plugin
- *
- * This module consolidates common utilities used across the AequilibraE plugin
- * to eliminate code duplication and provide consistent behavior for:
- * - Path resolution
- * - Column/style analysis
- * - Geometry column identification
- * - Caching utilities
- *
- * @fileoverview Shared Utility Functions
- * @author SimWrapper Development Team
- */
+// Shared utilities: path resolution, column analysis, and caching helpers
 
 import type { LayerConfig, JoinConfig } from './types'
 

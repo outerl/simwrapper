@@ -180,12 +180,7 @@ function buildPropertiesFromRow(
   const properties: Record<string, any> = { _layer: layerName }
   for (const col of selectedColumns) {
     const key = col.name
-    if (
-      key !== 'geojson_geom' &&
-      key !== 'geom_type' &&
-      row[key] !== null &&
-      row[key] !== undefined
-    ) {
+    if (key !== 'geojson_geom' && key !== 'geom_type' && row[key] != null) {
       properties[key] = row[key]
     }
   }
@@ -328,50 +323,24 @@ export async function fetchGeoJSONFeatures(
         continue
       }
 
-      // Build minimal properties object
-      // _layer is REQUIRED for styling to work correctly
-      const properties: Record<string, any> = { _layer: layerName }
-      for (const col of selectedColumns) {
-        const key = col.name
-        if (
-          key !== 'geojson_geom' &&
-          key !== 'geom_type' &&
-          row[key] !== null &&
-          row[key] !== undefined
-        ) {
-          properties[key] = row[key]
-        }
-      }
+      // Build minimal properties object and merge joined data if present
+      const properties = buildPropertiesFromRow(selectedColumns, row, layerName)
 
-      // Merge joined data if available (Map lookup keeps this O(1) per row)
       if (cachedJoinedData && joinConfig) {
         const joinRow = cachedJoinedData.get(row[joinConfig.leftKey])
-
         if (joinRow) {
           for (const [key, value] of Object.entries(joinRow)) {
-            if (!(key in properties)) {
-              properties[key] = value
-            } else if (key !== joinConfig.rightKey) {
-              properties[`${joinConfig.table}_${key}`] = value
-            }
+            if (!(key in properties)) properties[key] = value
+            else if (key !== joinConfig.rightKey) properties[`${joinConfig.table}_${key}`] = value
           }
         } else if (joinType === 'inner') {
           continue
         }
       }
 
-      // Parse the GeoJSON string into an object
-      let geometry: any
-      try {
-        geometry =
-          typeof row.geojson_geom === 'string' ? JSON.parse(row.geojson_geom) : row.geojson_geom
-
-        // Simplify coordinates to reduce memory footprint (skip if precision is max)
-        if (geometry.coordinates && coordPrecision < 15) {
-          geometry.coordinates = simplifyCoordinates(geometry.coordinates, coordPrecision)
-        }
-      } catch (e) {
-        // Clear row reference and skip
+      // Parse and simplify geometry
+      const geometry = parseAndSimplifyGeometry(row.geojson_geom, coordPrecision)
+      if (!geometry) {
         rows[r] = null
         continue
       }
