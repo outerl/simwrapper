@@ -395,14 +395,6 @@ export async function openDb(spl: SPL, arrayBuffer: ArrayBuffer, path?: string):
     return spl.db(arrayBuffer)
   }
 
-  // If the path looks like a remote URL (http(s) or s3), avoid caching.
-  // Remote files are often served from S3 and may change; re-downloading avoids
-  // serving stale data and reduces complexity with cache invalidation on S3.
-  const isRemote = /^https?:\/\//i.test(path) || /^s3:\/\//i.test(path)
-  if (isRemote) {
-    return spl.db(arrayBuffer)
-  }
-
   // Check cache first
   const cached = dbCache.get(path)
   if (cached) {

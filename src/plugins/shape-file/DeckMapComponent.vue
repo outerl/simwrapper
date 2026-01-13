@@ -428,8 +428,21 @@ export default defineComponent({
     }
 
     const container = `map-${this.viewId}`
-    const center = this.globalState.viewState.center as [number, number]
-    const zoom = this.globalState.viewState.zoom
+    // Prefer an explicit initialView prop if provided, otherwise fall back to global viewState
+    const initial =
+      this.initialView && typeof this.initialView === 'object'
+        ? this.initialView
+        : this.globalState.viewState
+
+    const center = Array.isArray(initial.center)
+      ? initial.center
+      : initial.longitude !== undefined && initial.latitude !== undefined
+      ? [initial.longitude, initial.latitude]
+      : (this.globalState.viewState.center as [number, number])
+
+    const zoom = initial.zoom ?? this.globalState.viewState.zoom
+    const bearing = initial.bearing ?? this.globalState.viewState.bearing
+    const pitch = initial.pitch ?? this.globalState.viewState.pitch
 
     //@ts-ignore
     this.mymap = new maplibregl.Map({
@@ -437,8 +450,28 @@ export default defineComponent({
       style,
       center,
       zoom,
+      bearing,
+      pitch,
       canvasContextAttributes: { preserveDrawingBuffer: true },
     })
+
+    // If we were given an explicit initialView, sync it to the global store if map is not independent
+    if (this.initialView && !this.mapIsIndependent) {
+      const gv = this.initialView && typeof this.initialView === 'object' ? this.initialView : null
+      if (gv) {
+        // Normalize to global store shape
+        const view = {
+          longitude: gv.longitude ?? (gv.center ? gv.center[0] : undefined),
+          latitude: gv.latitude ?? (gv.center ? gv.center[1] : undefined),
+          zoom: gv.zoom,
+          bearing: gv.bearing,
+          pitch: gv.pitch,
+        }
+        if (view.longitude !== undefined && view.latitude !== undefined) {
+          globalStore.commit('setMapCamera', view)
+        }
+      }
+    }
 
     this.mymap.on('move', this.handleMove)
     this.mymap.on('style.load', () => {
@@ -458,7 +491,28 @@ export default defineComponent({
   },
 
   beforeDestroy() {
-    if (this.deckOverlay) this.mymap?.removeControl(this.deckOverlay)
+    // Clear Deck layers and finalize deck to ensure GPU resources and rendered geometry are removed
+    try {
+      if (this.deckOverlay) {
+        // remove layers first
+        try {
+          this.deckOverlay.setProps({ layers: [] })
+        } catch (e) {
+          // ignore
+        }
+        // finalize underlying deck instance if available
+        try {
+          // @ts-ignore
+          this.deckOverlay.deck?.finalize?.()
+        } catch (e) {
+          // ignore
+        }
+        this.mymap?.removeControl(this.deckOverlay)
+      }
+    } catch (e) {
+      // ignore
+    }
+
     this.mymap?.remove()
     this.mymap = null
   },
