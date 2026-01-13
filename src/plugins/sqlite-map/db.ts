@@ -364,10 +364,6 @@ export async function fetchGeoJSONFeatures(
   return features
 }
 
-// ============================================================================
-// Database + file caching moved here from useAequilibrae for centralization
-// ============================================================================
-
 interface CachedDb {
   db: any
   refCount: number

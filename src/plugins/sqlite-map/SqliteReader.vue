@@ -1,0 +1,263 @@
+<template>
+  <div class="sqlite-reader">
+    <div v-if="loading" class="loading">{{ loadingText }}</div>
+    <slot
+      v-if="!loading"
+      :geoJsonFeatures="geoJsonFeatures"
+      :legendItems="legendItems"
+      :fillColors="fillColors"
+      :lineColors="lineColors"
+      :lineWidths="lineWidths"
+      :pointRadii="pointRadii"
+      :fillHeights="fillHeights"
+      :featureFilter="featureFilter"
+      :isRGBA="isRGBA"
+      :redrawCounter="redrawCounter"
+    ></slot>
+  </div>
+</template>
+
+<script lang="ts">
+import { defineComponent } from 'vue'
+import {
+  initSql,
+  releaseSql,
+  acquireLoadingSlot,
+  mapLoadingComplete,
+  getTotalMapsLoading,
+} from './loader'
+import {
+  applyStylesToVm,
+  loadDbWithCache,
+  releaseMainDbFromVm,
+  getMemoryLimits,
+  createLazyDbLoader,
+} from './helpers'
+import {
+  getCachedFile,
+  getCachedFileBuffer,
+  openDb,
+  getTableNames,
+  getTableSchema,
+  getRowCount,
+} from './db'
+import { hasGeometryColumn } from './utils'
+import { buildTables, buildGeoFeatures } from '../aequilibrae/useAequilibrae'
+import type { GeoFeature, VizDetails } from './types'
+
+export default defineComponent({
+  name: 'SqliteReader',
+  props: {
+    /** Configuration object with database path, layers, and styling */
+    config: { type: Object as any, required: true },
+    /** Subfolder path for resolving relative paths */
+    subfolder: { type: String, required: true },
+    /** File system API with getFileBlob method */
+    fileApi: { type: Object, required: true },
+  },
+  data() {
+    return {
+      loading: false,
+      loadingText: '',
+      db: null as any,
+      geoJsonFeatures: [] as GeoFeature[],
+      legendItems: [] as Array<{ label: string; color: string; value: any }>,
+      hasGeometry: false,
+      tables: [] as Array<{ name: string; type: string; rowCount: number; columns: any[] }>,
+      fillColors: new Uint8ClampedArray(),
+      lineColors: new Uint8ClampedArray(),
+      lineWidths: new Float32Array(),
+      pointRadii: new Float32Array(),
+      fillHeights: new Float32Array(),
+      featureFilter: new Float32Array(),
+      isRGBA: false,
+      redrawCounter: 0,
+      releaseSlot: null as (() => void) | null,
+      spl: null as any,
+    }
+  },
+
+  methods: {
+    async loadDatabase(): Promise<void> {
+      try {
+        this.loadingText = 'Loading SQL engine...'
+        this.spl = await initSql()
+
+        this.loadingText = 'Loading database...'
+        const dbPath = this.config.database
+
+        if (!dbPath) {
+          throw new Error('No database path specified in configuration')
+        }
+
+        // Use helper that handles cache logic
+        this.db = await loadDbWithCache(
+          this.spl,
+          this.fileApi,
+          getCachedFile,
+          getCachedFileBuffer,
+          openDb,
+          dbPath
+        )
+
+        this.loadingText = 'Reading tables...'
+        const layerConfigs = this.config.layers || {}
+        const { tables, hasGeometry } = await buildTables(this.db, layerConfigs)
+        this.tables = tables
+        this.hasGeometry = hasGeometry
+      } catch (error) {
+        throw new Error(
+          `Failed to load database: ${error instanceof Error ? error.message : String(error)}`
+        )
+      }
+    },
+
+    async extractGeometries(): Promise<void> {
+      if (!this.hasGeometry) {
+        return
+      }
+
+      try {
+        this.loadingText = 'Extracting geometries...'
+
+        // Auto-scale memory limits based on concurrent map loading
+        const totalMaps = getTotalMapsLoading()
+        const { autoLimit, autoPrecision } = getMemoryLimits(totalMaps)
+
+        // Memory optimization options - config values override auto-scaling
+        const memoryOptions = {
+          limit: this.config.geometryLimit ?? autoLimit,
+          coordinatePrecision: this.config.coordinatePrecision ?? autoPrecision,
+          minimalProperties: this.config.minimalProperties !== false,
+        }
+
+        // Create a lazy loader for extra databases
+        const extraDbPaths = this.config.extraDatabases || {}
+        const lazyDbLoader = createLazyDbLoader(
+          this.spl,
+          this.fileApi,
+          getCachedFile,
+          getCachedFileBuffer,
+          openDb,
+          extraDbPaths,
+          (msg: string) => (this.loadingText = msg)
+        )
+
+        const layerConfigs = this.config.layers || {}
+        const features = await buildGeoFeatures(
+          this.db,
+          this.tables,
+          layerConfigs,
+          lazyDbLoader,
+          memoryOptions
+        )
+
+        // Release main database after feature extraction
+        releaseMainDbFromVm(this)
+
+        // Give GC a chance to run before building styles
+        await new Promise(resolve => setTimeout(resolve, 10))
+
+        applyStylesToVm(this, features, this.config as VizDetails, layerConfigs)
+      } catch (error) {
+        throw new Error(
+          `Failed to extract geometries: ${error instanceof Error ? error.message : String(error)}`
+        )
+      }
+    },
+
+    buildLegend(): void {
+      const legend = this.config.legend
+
+      if (Array.isArray(legend)) {
+        this.legendItems = legend
+          .filter((entry: any) => !entry.subtitle)
+          .map((entry: any) => ({
+            label: entry.label || '',
+            color: this.convertColorForLegend(entry.color) || '#808080',
+            value: entry.label || '',
+          }))
+      } else {
+        this.legendItems = []
+      }
+    },
+
+    convertColorForLegend(color?: string): string | undefined {
+      return color
+        ?.replace('#', '')
+        .match(/.{1,2}/g)
+        ?.map(x => parseInt(x, 16))
+        .join(',')
+    },
+
+    cleanupMemory(): void {
+      releaseMainDbFromVm(this)
+      releaseSql()
+      this.spl = null
+      this.geoJsonFeatures = []
+      this.tables = []
+      this.fillColors = new Uint8ClampedArray()
+      this.lineColors = new Uint8ClampedArray()
+      this.lineWidths = new Float32Array()
+      this.pointRadii = new Float32Array()
+      this.fillHeights = new Float32Array()
+      this.featureFilter = new Float32Array()
+    },
+  },
+
+  async mounted() {
+    try {
+      if (this.config.thumbnail) {
+        this.$emit('isLoaded')
+        return
+      }
+      this.loading = true
+      this.loadingText = 'Waiting for other maps to load...'
+      this.releaseSlot = await acquireLoadingSlot()
+      await this.loadDatabase()
+      await this.extractGeometries()
+      if (this.releaseSlot) {
+        this.releaseSlot()
+        this.releaseSlot = null
+      }
+      this.buildLegend()
+    } catch (error) {
+      this.loadingText = `Error: ${error instanceof Error ? error.message : String(error)}`
+    } finally {
+      this.loading = false
+      if (this.releaseSlot) {
+        this.releaseSlot()
+        this.releaseSlot = null
+      }
+      mapLoadingComplete()
+      this.$emit('isLoaded')
+    }
+  },
+
+  beforeUnmount() {
+    // Always release the loading slot if acquired, even if loading didn't complete
+    if (this.releaseSlot) {
+      this.releaseSlot()
+      this.releaseSlot = null
+    }
+    this.cleanupMemory()
+    mapLoadingComplete()
+  },
+});
+</script>
+
+<style scoped>
+.sqlite-reader {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.loading {
+  text-align: center;
+  font-size: 1.2rem;
+  color: var(--textFancy);
+}
+</style>

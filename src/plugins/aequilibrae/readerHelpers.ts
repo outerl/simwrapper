@@ -1,6 +1,6 @@
 import { markRaw } from 'vue'
-import { buildStyleArrays } from './styling'
-import type { SqliteDb, VizDetails } from './types'
+import { buildStyleArrays } from '../sqlite-map/styling'
+import type { SqliteDb, VizDetails } from '../sqlite-map/types'
 
 export function applyStylesToVm(
   vm: any,
@@ -43,7 +43,7 @@ export async function loadDbWithCache(
   if (!arrayBuffer) {
     const blob = await aeqFileSystem.getFileBlob(path)
     arrayBuffer = await blob.arrayBuffer()
-    arrayBuffer = getCachedFileBuffer(path, arrayBuffer)
+    arrayBuffer = getCachedFileBuffer(path, arrayBuffer as ArrayBuffer)
   }
   // arrayBuffer is now guaranteed
   return await openDb(spl, arrayBuffer as ArrayBuffer, path)

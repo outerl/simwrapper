@@ -1,132 +1,19 @@
-// Core utilities for AequilibraE plugin: loading, caching and feature building
+// Core utilities for AequilibraE plugin: YAML parsing and configuration handling
 
-import SPL from 'spl.js'
 import YAML from 'yaml'
-import type {
-  VizDetails,
-  LayerConfig,
-  JoinConfig,
-  SqliteDb,
-  GeoFeature,
-  SPL as SPLType,
-} from './types'
-import {
-  getTableNames,
-  getTableSchema,
-  getRowCount,
-  fetchGeoJSONFeatures,
-  queryTable,
-  getCachedJoinData,
-  getCachedFile,
-  getCachedFileBuffer,
-  openDb,
-  releaseDb,
-} from './db'
-
-export { getCachedFileBuffer, hasCachedFile, getCachedFile, openDb, releaseDb } from './db'
-import {
-  resolvePath,
-  resolvePaths,
-  getUsedColumns,
-  getNeededJoinColumn,
-  createJoinCacheKey,
-  hasGeometryColumn,
-} from './utils'
-
-// ============================================================================
-// GLOBAL LOADING QUEUE - Ensures only one map loads at a time
-// This prevents memory exhaustion when loading many maps simultaneously.
-// Each map must acquire the lock before loading, and release it when done.
-// ============================================================================
-let loadingQueue: Promise<void> = Promise.resolve()
-let queueLength = 0
-let totalMapsLoading = 0 // Track total maps being loaded (not just waiting)
+import type { VizDetails, LayerConfig } from '../sqlite-map/types'
+import { resolvePath, resolvePaths, hasGeometryColumn } from '../sqlite-map/utils'
+import { getTableNames, getTableSchema, getRowCount, fetchGeoJSONFeatures } from '../sqlite-map/db'
+import type { SqliteDb } from '../sqlite-map/types'
 
 /**
- * Acquire a slot in the loading queue. Only one map can load at a time.
- * Returns a release function that MUST be called when loading is complete.
+ * Parse YAML configuration file for AequilibraE visualization.
+ * Resolves relative paths and validates database configuration.
+ *
+ * @param yamlText - Raw YAML content
+ * @param subfolder - Base folder for resolving relative paths
+ * @returns Parsed and validated VizDetails
  */
-export function acquireLoadingSlot(): Promise<() => void> {
-  queueLength++
-  totalMapsLoading++
-
-  let releaseSlot: () => void
-
-  const myTurn = loadingQueue.then()
-
-  // Create the next slot in the queue
-  loadingQueue = new Promise<void>(resolve => {
-    releaseSlot = () => {
-      queueLength--
-      resolve()
-    }
-  })
-
-  return myTurn.then(() => releaseSlot!)
-}
-
-/**
- * Call when a map has fully finished loading (after extractGeometries)
- * to update the total count for memory tuning purposes.
- */
-export function mapLoadingComplete(): void {
-  totalMapsLoading = Math.max(0, totalMapsLoading - 1)
-}
-
-/**
- * Get the current total number of maps being loaded.
- * This can be used to adjust memory limits dynamically.
- */
-export function getTotalMapsLoading(): number {
-  return totalMapsLoading
-}
-
-// ============================================================================
-// SHARED SPL ENGINE - Critical for memory when loading multiple maps
-// The SPL (SpatiaLite) engine is ~100MB+ in memory. Instead of each map
-// creating its own instance, we share a single instance across all maps.
-// ============================================================================
-let sharedSpl: SPLType | null = null
-let splInitPromise: Promise<SPLType> | null = null
-let splRefCount = 0
-
-/**
- * Get or create the shared SPL engine.
- * Uses reference counting to know when it's safe to clean up.
- */
-export async function initSql(): Promise<SPLType> {
-  splRefCount++
-
-  if (sharedSpl) {
-    return sharedSpl
-  }
-
-  // If already initializing, wait for that to complete
-  if (splInitPromise) {
-    return splInitPromise
-  }
-
-  // Initialize the shared SPL engine
-  splInitPromise = SPL().then((spl: SPLType) => {
-    sharedSpl = spl
-    splInitPromise = null
-    return spl
-  })
-
-  return splInitPromise!
-}
-
-/**
- * Release a reference to the shared SPL engine.
- * Call this when a map component is unmounted.
- */
-export function releaseSql(): void {
-  splRefCount = Math.max(0, splRefCount - 1)
-  // We keep the SPL engine alive even when refCount hits 0
-  // because it's expensive to reinitialize. It will be GC'd
-  // when the page is unloaded.
-}
-
 export async function parseYamlConfig(
   yamlText: string,
   subfolder: string | null
@@ -153,8 +40,17 @@ export async function parseYamlConfig(
   }
 }
 
+/**
+ * Build table metadata from database for layers.
+ * Identifies tables with geometry columns for visualization.
+ *
+ * @param db - Database connection
+ * @param layerConfigs - Layer configuration mapping
+ * @param allNames - Optional list of all table names (if already fetched)
+ * @returns Table metadata and whether any tables have geometry
+ */
 export async function buildTables(
-  db: any,
+  db: SqliteDb,
   layerConfigs: { [k: string]: LayerConfig },
   allNames?: string[]
 ) {
@@ -176,15 +72,6 @@ export async function buildTables(
   }
   return { tables, hasGeometry }
 }
-
-/**
- * Load join data from an extra database and return as a lookup map.
- * Memory optimized: only queries the columns that are actually needed.
- * Supports filtering: applies WHERE clause if specified in joinConfig.filter.
- * @param extraDb - The extra database connection
- * @param joinConfig - Join configuration specifying table, keys, columns, and optional filter
- * @param neededColumn - Optional: the specific column needed for styling (further reduces memory)
- */
 
 /**
  * Options for memory optimization when building geo features
@@ -223,7 +110,11 @@ export async function buildGeoFeatures(
   layerConfigs: { [k: string]: LayerConfig },
   lazyDbLoader?: LazyDbLoader,
   options?: GeoFeatureOptions
-): Promise<GeoFeature[]> {
+) {
+  // Import here to avoid circular dependency
+  const { getCachedJoinData } = await import('../sqlite-map/db')
+  const { getNeededJoinColumn, createJoinCacheKey } = await import('../sqlite-map/utils')
+
   // Shallow clone layerConfigs to avoid expensive deep cloning
   const plain = Object.assign({}, layerConfigs)
   const layersToProcess = Object.keys(plain).length
@@ -232,10 +123,9 @@ export async function buildGeoFeatures(
         .filter(t => hasGeometryColumn(t.columns))
         .map(t => [t.name, { table: t.name, type: 'line' as const }])
 
-  const features: GeoFeature[] = []
+  const features: any[] = []
 
   // Cache for extra databases loaded during this call
-  // This prevents loading the same database multiple times if multiple layers use it
   const loadedExtraDbs = new Map<string, SqliteDb>()
 
   try {
@@ -248,44 +138,31 @@ export async function buildGeoFeatures(
 
       // Check if this layer has a join configuration
       let joinedData: Map<any, Record<string, any>> | undefined
-      let joinConfig: JoinConfig | undefined
 
       if (layerConfig.join && lazyDbLoader) {
-        joinConfig = layerConfig.join
         const neededColumn = getNeededJoinColumn(layerConfig)
-
-        // Create a cache key for this specific join query (for logging only)
-        const cacheKey = createJoinCacheKey(
-          joinConfig.database,
-          joinConfig.table,
-          neededColumn,
-          joinConfig.filter
-        )
 
         try {
           // Load or reuse the extra database via the provided lazy loader
-          let extraDb = loadedExtraDbs.get(joinConfig.database)
+          let extraDb = loadedExtraDbs.get(layerConfig.join.database)
           if (!extraDb) {
-            const maybeDb = await lazyDbLoader(joinConfig.database)
+            const maybeDb = await lazyDbLoader(layerConfig.join.database)
             if (maybeDb) {
               extraDb = maybeDb
-              loadedExtraDbs.set(joinConfig.database, maybeDb)
+              loadedExtraDbs.set(layerConfig.join.database, maybeDb)
             }
           }
 
           if (extraDb) {
-            // Centralized function will handle its own caching
-            joinedData = await getCachedJoinData(extraDb, joinConfig, neededColumn)
-            const colInfo = neededColumn ? ` (column: ${neededColumn})` : ''
-            // Loaded joined data successfully (verbose log removed)
+            joinedData = await getCachedJoinData(extraDb, layerConfig.join, neededColumn)
           } else {
             console.warn(
-              `⚠️ Extra database '${joinConfig.database}' not found for layer '${layerName}'`
+              `⚠️ Extra database '${layerConfig.join.database}' not found for layer '${layerName}'`
             )
           }
         } catch (e) {
           console.warn(
-            `⚠️ Failed to load join data from ${joinConfig.database}.${joinConfig.table}:`,
+            `⚠️ Failed to load join data from ${layerConfig.join.database}.${layerConfig.join.table}:`,
             e
           )
         }
@@ -297,7 +174,7 @@ export async function buildGeoFeatures(
         layerName,
         cfg,
         joinedData,
-        joinConfig,
+        layerConfig.join,
         options
       )
 
@@ -306,17 +183,16 @@ export async function buildGeoFeatures(
         features.push(layerFeatures[i])
       }
 
-      // Allow GC to run between layers - longer pause to ensure cleanup
+      // Allow GC to run between layers
       await new Promise(resolve => setTimeout(resolve, 50))
     }
   } finally {
-    // NOTE: Do NOT close extra databases here - they are managed by the global database cache
-    // and may be reused by other panels. The openDb() function handles lifecycle management
-    // via refCount. Only the global cache's releaseDb() function should close databases.
     loadedExtraDbs.clear()
-
-    // No local join cache to clear — db.ts manages join caches centrally
   }
 
   return features
 }
+
+// Re-export database functions from sqlite-map for convenience
+export { getCachedFileBuffer, hasCachedFile, getCachedFile, openDb, releaseDb } from '../sqlite-map/db'
+export { initSql, releaseSql, acquireLoadingSlot, mapLoadingComplete, getTotalMapsLoading } from '../sqlite-map/loader'
