@@ -45,6 +45,7 @@ import AequilibraEFileSystem from './AequilibraEFileSystem'
 import SqliteReader from '@/plugins/sqlite-map/SqliteReader.vue'
 import { parseYamlConfig } from './useAequilibrae'
 import { resolvePath } from '../sqlite-map/utils'
+import { clearAllDbCaches } from '../sqlite-map/db'
 import DeckMapComponent from '@/plugins/shape-file/DeckMapComponent.vue'
 import LegendColors from '@/components/LegendColors.vue'
 import BackgroundLayers from '@/js/BackgroundLayers'
@@ -92,6 +93,10 @@ const MyComponent = defineComponent({
       // Trigger redraw through SqliteReader's slot data
       this.$forceUpdate()
     },
+    root() {
+      // Clear caches when switching projects
+      this.clearCaches()
+    },
   },
 
   beforeUnmount() {
@@ -128,6 +133,10 @@ const MyComponent = defineComponent({
 
     resolvePath(filePath: string): string {
       return resolvePath(filePath, this.subfolder)
+    },
+
+    clearCaches(): void {
+      clearAllDbCaches()
     },
 
     async getVizDetails(): Promise<void> {

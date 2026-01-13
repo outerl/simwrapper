@@ -194,5 +194,5 @@ export async function buildGeoFeatures(
 }
 
 // Re-export database functions from sqlite-map for convenience
-export { getCachedFileBuffer, hasCachedFile, getCachedFile, openDb, releaseDb } from '../sqlite-map/db'
+export { openDb, releaseDb } from '../sqlite-map/db'
 export { initSql, releaseSql, acquireLoadingSlot, mapLoadingComplete, getTotalMapsLoading } from '../sqlite-map/loader'

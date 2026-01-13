@@ -53,13 +53,11 @@ export function releaseMainDbFromVm(vm: any) {
 }
 
 /**
- * Load a database from file, using cache when available.
+ * Load a database from file.
  * Abstracts away the file I/O details.
  *
  * @param spl - SPL engine instance
  * @param fileApi - File system API with getFileBlob method
- * @param getCachedFile - Function to check cache for existing buffer
- * @param getCachedFileBuffer - Function to cache a buffer after loading
  * @param openDb - Function to open database from buffer
  * @param path - Path to database file
  * @returns Opened database connection
@@ -67,19 +65,12 @@ export function releaseMainDbFromVm(vm: any) {
 export async function loadDbWithCache(
   spl: any,
   fileApi: any,
-  getCachedFile: (p: string) => ArrayBuffer | null,
-  getCachedFileBuffer: (p: string, b: ArrayBuffer) => ArrayBuffer,
   openDb: (spl: any, b: ArrayBuffer, p?: string) => Promise<SqliteDb>,
   path: string
 ) {
-  let arrayBuffer: ArrayBuffer | null = getCachedFile(path)
-  if (!arrayBuffer) {
-    const blob = await fileApi.getFileBlob(path)
-    arrayBuffer = await blob.arrayBuffer()
-    arrayBuffer = getCachedFileBuffer(path, arrayBuffer as ArrayBuffer)
-  }
-  // arrayBuffer is now guaranteed
-  return await openDb(spl, arrayBuffer as ArrayBuffer, path)
+  const blob = await fileApi.getFileBlob(path)
+  const arrayBuffer = await blob.arrayBuffer()
+  return await openDb(spl, arrayBuffer, path)
 }
 
 /**
@@ -88,8 +79,6 @@ export async function loadDbWithCache(
  *
  * @param spl - SPL engine instance
  * @param fileApi - File system API
- * @param getCachedFile - Cache lookup function
- * @param getCachedFileBuffer - Cache store function
  * @param openDb - Database open function
  * @param extraDbPaths - Map of database names to file paths
  * @param onLoadingText - Optional callback to update loading message
@@ -98,8 +87,6 @@ export async function loadDbWithCache(
 export function createLazyDbLoader(
   spl: any,
   fileApi: any,
-  getCachedFile: (p: string) => ArrayBuffer | null,
-  getCachedFileBuffer: (p: string, b: ArrayBuffer) => ArrayBuffer,
   openDb: (spl: any, b: ArrayBuffer, p?: string) => Promise<SqliteDb>,
   extraDbPaths: Record<string, string>,
   onLoadingText?: (msg: string) => void
@@ -113,16 +100,9 @@ export function createLazyDbLoader(
         onLoadingText(`Loading ${dbName} database...`)
       }
 
-      // Check cache first to avoid re-downloading from S3
-      let arrayBuffer: ArrayBuffer | null = getCachedFile(path)
-      if (!arrayBuffer) {
-        const blob = await fileApi.getFileBlob(path)
-        arrayBuffer = await blob.arrayBuffer()
-        arrayBuffer = getCachedFileBuffer(path, arrayBuffer as ArrayBuffer)
-      }
-
-      // Cache extra databases by passing the path - multiple panels may use the same results database
-      return await openDb(spl, arrayBuffer as ArrayBuffer, path)
+      const blob = await fileApi.getFileBlob(path)
+      const arrayBuffer = await blob.arrayBuffer()
+      return await openDb(spl, arrayBuffer, path)
     } catch (error) {
       console.warn(`Failed to load extra database '${dbName}':`, error)
       return null

@@ -13,12 +13,14 @@
       :featureFilter="featureFilter"
       :isRGBA="isRGBA"
       :redrawCounter="redrawCounter"
+      :initialView="initialView"
     ></slot>
   </div>
 </template>
 
 <script lang="ts">
 import { defineComponent } from 'vue'
+import globalStore from '@/store'
 import {
   initSql,
   releaseSql,
@@ -33,14 +35,7 @@ import {
   getMemoryLimits,
   createLazyDbLoader,
 } from './helpers'
-import {
-  getCachedFile,
-  getCachedFileBuffer,
-  openDb,
-  getTableNames,
-  getTableSchema,
-  getRowCount,
-} from './db'
+import { openDb, getTableNames, getTableSchema, getRowCount } from './db'
 import { hasGeometryColumn } from './utils'
 import { buildTables, buildGeoFeatures } from '../aequilibrae/useAequilibrae'
 import type { GeoFeature, VizDetails } from './types'
@@ -74,6 +69,7 @@ export default defineComponent({
       redrawCounter: 0,
       releaseSlot: null as (() => void) | null,
       spl: null as any,
+      initialView: null as any,
     }
   },
 
@@ -90,15 +86,8 @@ export default defineComponent({
           throw new Error('No database path specified in configuration')
         }
 
-        // Use helper that handles cache logic
-        this.db = await loadDbWithCache(
-          this.spl,
-          this.fileApi,
-          getCachedFile,
-          getCachedFileBuffer,
-          openDb,
-          dbPath
-        )
+        // Use helper that handles file loading
+        this.db = await loadDbWithCache(this.spl, this.fileApi, openDb, dbPath)
 
         this.loadingText = 'Reading tables...'
         const layerConfigs = this.config.layers || {}
@@ -109,6 +98,46 @@ export default defineComponent({
         throw new Error(
           `Failed to load database: ${error instanceof Error ? error.message : String(error)}`
         )
+      }
+    },
+
+    computeInitialViewFromConfig(config: any) {
+      if (!config) return null
+      const center = config.center
+      const zoom = config.zoom ?? 9
+      const bearing = config.bearing ?? 0
+      const pitch = config.pitch ?? 0
+      if (!center) return null
+
+      let lon: number | undefined
+      let lat: number | undefined
+
+      if (Array.isArray(center) && center.length >= 2) {
+        lon = Number(center[0])
+        lat = Number(center[1])
+      } else if (typeof center === 'string') {
+        const parts = center.split(',').map((s: string) => s.trim())
+        if (parts.length >= 2) {
+          lon = parseFloat(parts[0])
+          lat = parseFloat(parts[1])
+        }
+      } else if (
+        typeof center === 'object' &&
+        center.lon !== undefined &&
+        center.lat !== undefined
+      ) {
+        lon = Number((center as any).lon)
+        lat = Number((center as any).lat)
+      }
+
+      if (!Number.isFinite(lon) || !Number.isFinite(lat)) return null
+
+      return {
+        longitude: lon,
+        latitude: lat,
+        zoom,
+        bearing,
+        pitch,
       }
     },
 
@@ -136,8 +165,6 @@ export default defineComponent({
         const lazyDbLoader = createLazyDbLoader(
           this.spl,
           this.fileApi,
-          getCachedFile,
-          getCachedFileBuffer,
           openDb,
           extraDbPaths,
           (msg: string) => (this.loadingText = msg)
@@ -211,6 +238,7 @@ export default defineComponent({
         this.$emit('isLoaded')
         return
       }
+
       this.loading = true
       this.loadingText = 'Waiting for other maps to load...'
       this.releaseSlot = await acquireLoadingSlot()
@@ -221,6 +249,18 @@ export default defineComponent({
         this.releaseSlot = null
       }
       this.buildLegend()
+
+      // Compute and apply initial view from config after geometries are ready so DeckMap
+      // initializes with the correct camera when the slot renders.
+      const iv = this.computeInitialViewFromConfig(this.config)
+      if (iv) {
+        this.initialView = iv
+        try {
+          globalStore.commit('setMapCamera', iv)
+        } catch (e) {
+          // ignore if store commit fails
+        }
+      }
     } catch (error) {
       this.loadingText = `Error: ${error instanceof Error ? error.message : String(error)}`
     } finally {
@@ -243,7 +283,7 @@ export default defineComponent({
     this.cleanupMemory()
     mapLoadingComplete()
   },
-});
+})
 </script>
 
 <style scoped>
