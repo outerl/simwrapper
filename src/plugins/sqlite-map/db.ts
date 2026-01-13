@@ -384,32 +384,6 @@ interface CachedDb {
 
 const dbCache = new Map<string, CachedDb>()
 const dbLoadPromises = new Map<string, Promise<SqliteDb>>()
-const fileCache = new Map<string, ArrayBuffer>()
-
-/**
- * Get a file blob, using cache if available to avoid re-downloading from S3
- */
-export function getCachedFileBuffer(path: string, arrayBuffer: ArrayBuffer): ArrayBuffer {
-  if (fileCache.has(path)) {
-    return fileCache.get(path)!
-  }
-  fileCache.set(path, arrayBuffer)
-  return arrayBuffer
-}
-
-/**
- * Check if a file is cached without downloading
- */
-export function hasCachedFile(path: string): boolean {
-  return fileCache.has(path)
-}
-
-/**
- * Get cached file buffer if available
- */
-export function getCachedFile(path: string): ArrayBuffer | null {
-  return fileCache.get(path) || null
-}
 
 /**
  * Open a database, using cache if available.
@@ -418,6 +392,14 @@ export function getCachedFile(path: string): ArrayBuffer | null {
 export async function openDb(spl: SPL, arrayBuffer: ArrayBuffer, path?: string): Promise<SqliteDb> {
   // If no path provided, can't cache - just open directly
   if (!path) {
+    return spl.db(arrayBuffer)
+  }
+
+  // If the path looks like a remote URL (http(s) or s3), avoid caching.
+  // Remote files are often served from S3 and may change; re-downloading avoids
+  // serving stale data and reduces complexity with cache invalidation on S3.
+  const isRemote = /^https?:\/\//i.test(path) || /^s3:\/\//i.test(path)
+  if (isRemote) {
     return spl.db(arrayBuffer)
   }
 
@@ -474,7 +456,7 @@ export function releaseDb(path: string): void {
 }
 
 /**
- * Force close all cached databases. Use with caution - only call when
+ * Force close all cached databases and clear file cache. Use with caution - only call when
  * you're sure no maps are using any databases.
  */
 export function clearAllDbCaches(): void {
@@ -489,4 +471,12 @@ export function clearAllDbCaches(): void {
   }
   dbCache.clear()
   dbLoadPromises.clear()
+
+  // also clear the join data cache, if it exists
+  if (typeof joinDataCache !== 'undefined') {
+    joinDataCache.clear()
+  }
 }
+
+// Backwards-compatible alias for clearing all caches
+export const clearAllCaches = clearAllDbCaches
