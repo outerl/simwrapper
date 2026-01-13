@@ -15,6 +15,7 @@ import {
   isGeometryColumn,
   getUsedColumns,
   simplifyCoordinates,
+  createJoinCacheKey,
 } from './utils'
 
 /**
@@ -130,6 +131,21 @@ export function performJoin(
 // Cache for joinData
 const joinDataCache: Map<string, Map<any, Record<string, any>>> = new Map()
 
+export function clearJoinCache(key?: string) {
+  if (key) {
+    joinDataCache.delete(key)
+  } else {
+    joinDataCache.clear()
+  }
+}
+
+export function getJoinCacheStats() {
+  return {
+    keys: Array.from(joinDataCache.keys()),
+    size: joinDataCache.size,
+  }
+}
+
 /**
  * Get cached joinData or load it if not cached
  * Accepts an optional neededColumn to reduce memory by querying fewer columns.
@@ -139,9 +155,12 @@ export async function getCachedJoinData(
   joinConfig: JoinConfig,
   neededColumn?: string
 ): Promise<Map<any, Record<string, any>>> {
-  const cacheKey = `${joinConfig.table}::${joinConfig.rightKey}::${neededColumn || '*'}::${
-    joinConfig.filter || ''
-  }`
+  const cacheKey = createJoinCacheKey(
+    joinConfig.database,
+    joinConfig.table,
+    neededColumn || undefined,
+    joinConfig.filter
+  )
 
   if (joinDataCache.has(cacheKey)) {
     return joinDataCache.get(cacheKey)!
@@ -472,3 +491,11 @@ export function clearAllDbCaches(): void {
 
 // Backwards-compatible alias for clearing all caches
 export const clearAllCaches = clearAllDbCaches
+
+export function getDbCacheStats() {
+  const entries = Array.from(dbCache.entries()).map(([path, v]) => ({ path, refCount: v.refCount }))
+  return {
+    size: dbCache.size,
+    entries,
+  }
+}

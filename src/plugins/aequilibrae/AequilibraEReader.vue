@@ -5,7 +5,7 @@
     :subfolder="subfolder"
     :fileApi="aeqFileSystem"
     @isLoaded="$emit('isLoaded')"
-    v-slot="{ geoJsonFeatures, fillColors, lineColors, lineWidths, pointRadii, fillHeights, featureFilter, isRGBA, redrawCounter, legendItems }"
+    v-slot="{ geoJsonFeatures, fillColors, lineColors, lineWidths, pointRadii, fillHeights, featureFilter, isRGBA, redrawCounter, legendItems, initialView }"
   )
     DeckMapComponent(
       ref="deckMap"
@@ -153,15 +153,13 @@ const MyComponent = defineComponent({
           )
         }
       } else if (this.yamlConfig) {
-        const yamlBlob = await this.aeqFileSystem.getFileBlob(
-          this.resolvePath(this.yamlConfig)
-        )
+        const yamlBlob = await this.aeqFileSystem.getFileBlob(this.resolvePath(this.yamlConfig))
         const yamlText = await yamlBlob.text()
         this.vizConfig = await parseYamlConfig(yamlText, this.subfolder || null)
       } else {
         throw new Error('No config or yamlConfig provided')
       }
-      this.setMapCenter()
+      // initialView is provided by SqliteReader; no local computation necessary
     },
 
     handleFeatureClick(feature: any) {
@@ -171,29 +169,10 @@ const MyComponent = defineComponent({
     handleTooltip(hoverInfo: any) {
       const props = hoverInfo?.object?.properties
       return props
-        ? Object.entries(props).map(([key, value]) => `${key}: ${value}`).join('<br>')
+        ? Object.entries(props)
+            .map(([key, value]) => `${key}: ${value}`)
+            .join('<br>')
         : ''
-    },
-
-    setMapCenter(): void {
-      const center = this.vizConfig.center
-      const zoom = this.vizConfig.zoom ?? 9
-      const bearing = this.vizConfig.bearing ?? 0
-      const pitch = this.vizConfig.pitch ?? 0
-
-      if (!center) return
-
-      let [lon, lat] = Array.isArray(center)
-        ? center
-        : center.split(',').map((c: string) => parseFloat(c.trim()))
-
-      this.initialView = {
-        longitude: lon,
-        latitude: lat,
-        zoom,
-        bearing,
-        pitch,
-      }
     },
   },
 })
@@ -203,7 +182,7 @@ export default MyComponent
 
 <style scoped lang="scss">
 @import '@/styles.scss';
-@import './reader.scss';
+@import '../sqlite-map/reader.scss';
 
 .c-aequilibrae-viewer {
   position: absolute;

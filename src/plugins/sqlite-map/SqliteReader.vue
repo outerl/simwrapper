@@ -37,7 +37,7 @@ import {
 } from './helpers'
 import { openDb, getTableNames, getTableSchema, getRowCount } from './db'
 import { hasGeometryColumn } from './utils'
-import { buildTables, buildGeoFeatures } from '../aequilibrae/useAequilibrae'
+import { buildTables, buildGeoFeatures } from './feature-builder'
 import type { GeoFeature, VizDetails } from './types'
 
 export default defineComponent({

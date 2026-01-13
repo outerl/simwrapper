@@ -1,45 +1,17 @@
-import * as cartoColors from 'cartocolor'
 import { RGBA, RGB, ColorStyle, LayerStyle, BuildArgs, BuildResult } from './types'
+import {
+  hexToRgbA,
+  hexToRgb,
+  hexToRgba,
+  getPaletteColors,
+  buildColorEncoder,
+  buildCategoryEncoder,
+  toNumber,
+} from './color-utils'
 
 // Local helper types
 type ColumnProperties = Record<string, any>
 type PropertiesArray = ColumnProperties[]
-
-// Unified hex -> RGB(A) parser
-const hexToRgbA = (hex: string, alpha: number = 1): RGBA => {
-  const bytes = hex.replace('#', '').match(/.{1,2}/g) || ['80', '80', '80']
-  return [
-    parseInt(bytes[0], 16),
-    parseInt(bytes[1], 16),
-    parseInt(bytes[2], 16),
-    Math.round(alpha * 255),
-  ]
-}
-
-const hexToRgb = (hex: string): RGB => {
-  const rgba = hexToRgbA(hex, 1)
-  return [rgba[0], rgba[1], rgba[2]]
-}
-
-const hexToRgba = (hex: string, alpha: number = 1): RGBA => hexToRgbA(hex, alpha)
-
-/**
- * Gets color palette from CartoColor library
- *
- * @param name - Name of the color palette (e.g., 'YlGn', 'Viridis')
- * @param numColors - Number of colors needed
- * @returns Array of hex color strings
- */
-const getPaletteColors = (name: string, numColors: number): string[] => {
-  const palette = (cartoColors as any)[name || 'YlGn']
-  if (!palette) return Array(numColors).fill('#808080')
-  const sizes = Object.keys(palette)
-    .map(Number)
-    .filter(n => n > 0)
-    .sort((a, b) => a - b)
-  const size = sizes.find(s => s >= numColors) || sizes[sizes.length - 1]
-  return palette[size] || Array(numColors).fill('#808080')
-}
 
 /**
  * Safely converts a value to number, returning null for invalid values
@@ -47,80 +19,6 @@ const getPaletteColors = (name: string, numColors: number): string[] => {
  * @param value - Value to convert to number
  * @returns Number or null if conversion fails
  */
-const toNumber = (value: any): number | null => {
-  const num = Number(value)
-  return isNaN(num) ? null : num
-}
-
-/**
- * Safe minimum function that avoids stack overflow on large arrays
- *
- * @param arr - Array of numbers
- * @returns Minimum value, or 0 if array is empty
- */
-const safeMin = (arr: number[]): number => {
-  if (arr.length === 0) return 0
-  let min = arr[0]
-  for (let i = 1; i < arr.length; i++) {
-    if (arr[i] < min) min = arr[i]
-  }
-  return min
-}
-
-/**
- * Safe maximum function that avoids stack overflow on large arrays
- *
- * @param arr - Array of numbers
- * @returns Maximum value, or 1 if array is empty
- */
-const safeMax = (arr: number[]): number => {
-  if (arr.length === 0) return 1
-  let max = arr[0]
-  for (let i = 1; i < arr.length; i++) {
-    if (arr[i] > max) max = arr[i]
-  }
-  return max
-}
-
-const buildColorEncoder = (
-  values: any[],
-  style: any,
-  dataRange: [number, number] | null = null
-) => {
-  if (dataRange) {
-    values = values.map(v => {
-      const num = toNumber(v)
-      if (num === null) return null
-      return Math.max(dataRange[0], Math.min(dataRange[1], num))
-    })
-  }
-
-  const nums = values.map(toNumber).filter((v): v is number => v !== null)
-  const s = style || {}
-  const [min, max] = s.range ? s.range : [safeMin(nums), safeMax(nums)]
-
-  const paletteName = s.palette || 'YlGn'
-  const numColors = s.numColors || 7
-  const colors = getPaletteColors(paletteName, numColors).map((h: string) => hexToRgba(h, 1))
-
-  const scale = max === min ? 0 : (numColors - 1) / (max - min)
-
-  return (value: any) => {
-    const num = toNumber(value) ?? min
-    const idx = Math.round((num - min) * scale)
-    return colors[Math.max(0, Math.min(numColors - 1, idx))]
-  }
-}
-
-const buildCategoryEncoder = (colors: Record<string, string>, defaultColor: string = '#808080') => {
-  const colorMap = new Map<string, RGBA>()
-  for (const [key, hex] of Object.entries(colors)) {
-    colorMap.set(String(key), hexToRgbA(hex, 1))
-  }
-  const defaultRgba = hexToRgbA(defaultColor, 1)
-
-  return (value: any) => colorMap.get(String(value)) || defaultRgba
-}
 
 const applyQuantitativeMapping = (
   values: (number | null)[],
