@@ -11,11 +11,9 @@
 
 import type { JoinConfig, GeoFeature, SqliteDb, SPL } from './types'
 import {
-  GEOMETRY_COLUMN,
   ESSENTIAL_SPATIAL_COLUMNS,
   isGeometryColumn,
   getUsedColumns,
-  buildColumnSelection,
   simplifyCoordinates,
 } from './utils'
 
@@ -276,16 +274,30 @@ export async function fetchGeoJSONFeatures(
     typeof layerConfig.sqlFilter === 'string' &&
     layerConfig.sqlFilter.trim().length > 0
   ) {
-    filterClause += ` AND (${layerConfig.sqlFilter})`
+    const sqlFilter = layerConfig.sqlFilter.trim()
+    // Basic safety check: disallow obvious injection patterns and dangerous statements
+    const unsafePattern =
+      /;|--|\b(ALTER|DROP|INSERT|UPDATE|DELETE|REPLACE|ATTACH|DETACH|VACUUM|PRAGMA)\b/i
+    if (unsafePattern.test(sqlFilter)) {
+      throw new Error('Invalid sqlFilter in layer configuration')
+    }
+    filterClause += ` AND (${sqlFilter})`
   }
+
+  // Escape table name to prevent breaking out of the quoted identifier
+  const safeTableName = String(table.name).replace(/"/g, '""')
+  // Ensure LIMIT is a safe positive integer
+  const numericLimit = Number(limit)
+  const safeLimit =
+    Number.isFinite(numericLimit) && numericLimit > 0 ? Math.floor(numericLimit) : 1000
 
   const query = `
     SELECT ${columnNames},
            AsGeoJSON(geometry) as geojson_geom,
            GeometryType(geometry) as geom_type
-    FROM "${table.name}"
+    FROM "${safeTableName}"
     WHERE ${filterClause}
-    LIMIT ${limit};
+    LIMIT ${safeLimit};
   `
 
   // Execute query and get rows

@@ -147,7 +147,7 @@ const plugins = [
     kebabName: "aeq-reader",
     filePatterns: ['**/aeqviz-*.y?(a)ml'],
     component: defineAsyncComponent(() => import('./aequilibrae/AequilibraEReader.vue')),
-  }
+  },
 ]
 
 export const pluginComponents: { [key: string]: AsyncComponent } = {}
