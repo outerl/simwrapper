@@ -204,7 +204,7 @@ export default defineComponent({
       return []
     },
 
-    async getDataFromSQLQuery(database: string, query: string) {
+    async getDataFromSQLQuery(database: string, query: string, singleValue = true, titleColumn = 'metric', valueColumn = 'value') {
       try {
         // sanitise query first, let us fail early if bad
         const sanitisedQuery = query.trim()
@@ -212,24 +212,27 @@ export default defineComponent({
         const unsafePattern =
           /;\s*\b(ALTER|DROP|INSERT|UPDATE|DELETE|REPLACE|ATTACH|DETACH|VACUUM|PRAGMA)\b|--/i
         if (unsafePattern.test(sanitisedQuery)) {
-          console.log('Unsafe query detected: ' + sanitisedQuery)
           throw new Error('Invalid (unsafe!) query in layer dataset: ' + sanitisedQuery)
         }
         // open a sqlite connection
         const spl = await initSql()
 
-        console.log("SPL connection open!")
-        
         // connect to database
         const db = await loadDbWithCache(spl, this.fileApi, openDb, database)
-        console.log("Database connected!")
         
         // run query and return result
-        const queryResult = await db.exec(sanitisedQuery).get.first
-        console.log("Query executed!")
-        console.log(queryResult) 
-
-        return queryResult
+        if (singleValue) {
+          const queryResult = await db.exec(sanitisedQuery).get.first
+          return queryResult
+        } else {
+          const queryResult = await db.exec(sanitisedQuery).get.objs
+          const results = []
+          for (const obj of queryResult) {
+            results.push([obj[titleColumn], obj[valueColumn]]) // table columns default to 'metric' and 'value'
+          }
+          console.log(results)
+          return results
+        }
       } catch (e) {
         console.error('' + e)
         this.$emit('error', 'Error querying database: ' + database)
@@ -245,10 +248,13 @@ export default defineComponent({
       }
       // It can be database & sql query
       if (this.config.dataset.database && this.config.dataset.query) {
-        return await this.getDataFromSQLQuery(
+        return { data: await this.getDataFromSQLQuery(
           this.config.dataset.database,
-          this.config.dataset.query
-        )
+          this.config.dataset.query,
+          false,
+          this.config.dataset.titleCol || 'metric',
+          this.config.dataset.valueCol || 'value'
+        ) }
       }
       // Otherwise it's a list of key-value pairs.
       // Values can either be static or be a database & sql query returning a single value.
