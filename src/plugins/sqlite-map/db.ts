@@ -9,6 +9,7 @@
  * @author SimWrapper Development Team
  */
 
+import proj4 from 'proj4'
 import type { JoinConfig, GeoFeature, SqliteDb, SPL } from './types'
 import {
   ESSENTIAL_SPATIAL_COLUMNS,
@@ -233,21 +234,44 @@ export async function fetchGeoJSONFeatures(
   table: { name: string; columns: any[] },
   layerName: string,
   layerConfig: any,
-  joinedData?: Map<any, Record<string, any>>,
-  joinConfig?: JoinConfig,
-  options?: {
+  // Backwards-compatible parameters: callers for POLARIS pass (db, table, layerName, layerConfig, options, filterConfigs)
+  // AequilibraE callers pass (db, table, layerName, layerConfig, joinedData?, joinConfig?, options?)
+  joinedDataOrOptions?: Map<any, Record<string, any>> | { limit?: number; coordinatePrecision?: number; minimalProperties?: boolean },
+  joinConfigOrFilter?: JoinConfig | any,
+  optionsMaybe?: {
     limit?: number
     coordinatePrecision?: number
     minimalProperties?: boolean
   }
 ): Promise<GeoFeature[]> {
+  // Normalize parameters for both calling conventions
+  let joinedData: Map<any, Record<string, any>> | undefined
+  let joinConfig: JoinConfig | undefined
+  let options = optionsMaybe as { limit?: number; coordinatePrecision?: number; minimalProperties?: boolean } | undefined
+
+  // If the 5th arg looks like an options object (has limit or coordinatePrecision), treat it as POLARIS-style call
+  if (
+    joinedDataOrOptions &&
+    typeof joinedDataOrOptions === 'object' &&
+    !(joinedDataOrOptions instanceof Map) &&
+    (('limit' in (joinedDataOrOptions as any)) || ('coordinatePrecision' in (joinedDataOrOptions as any)) || ('minimalProperties' in (joinedDataOrOptions as any)))
+  ) {
+    options = joinedDataOrOptions as any
+    // joinConfigOrFilter in this mode is polaris' filterConfigs; we ignore it here
+    joinedData = undefined
+    joinConfig = undefined
+  } else {
+    joinedData = joinedDataOrOptions as Map<any, Record<string, any>> | undefined
+    joinConfig = (joinConfigOrFilter as JoinConfig) ?? undefined
+    options = options ?? optionsMaybe
+  }
+
   const limit = options?.limit ?? 1000000 // Default limit
   const coordPrecision = options?.coordinatePrecision ?? 5
   const minimalProps = options?.minimalProperties ?? true
 
   // Resolve joined data early so we can reuse the cached Map instead of rebuilding arrays per row
-  const cachedJoinedData =
-    joinedData ?? (joinConfig ? await getCachedJoinData(db, joinConfig) : undefined)
+  const cachedJoinedData = joinedData ?? (joinConfig ? await getCachedJoinData(db, joinConfig) : undefined)
 
   // Determine which columns we actually need
   const usedColumns = getUsedColumns(layerConfig)
@@ -285,9 +309,21 @@ export async function fetchGeoJSONFeatures(
       .join(', ')
   }
 
+  // Determine geometry column name for this table (support 'geometry', 'geo', or other names detected by isGeometryColumn)
+  function findGeometryColumn(cols: any[]): string {
+    for (const c of cols) {
+      const n = String(c.name).toLowerCase()
+      if (isGeometryColumn(n) || n === 'geo' || n === 'geometry') return c.name
+    }
+    // fallback to 'geometry'
+    return 'geometry'
+  }
+
+  const geomCol = findGeometryColumn(table.columns)
+
   // Optionally allow a custom SQL filter from the YAML config for this layer
   // e.g. layerConfig.sqlFilter = "link_type != 'centroid'"
-  let filterClause = 'geometry IS NOT NULL'
+  let filterClause = `${geomCol} IS NOT NULL`
   if (
     layerConfig &&
     typeof layerConfig.sqlFilter === 'string' &&
@@ -310,10 +346,12 @@ export async function fetchGeoJSONFeatures(
   const safeLimit =
     Number.isFinite(numericLimit) && numericLimit > 0 ? Math.floor(numericLimit) : 1000
 
+  const safeGeomCol = String(geomCol).replace(/"/g, '""')
+
   const query = `
     SELECT ${columnNames},
-           AsGeoJSON(geometry) as geojson_geom,
-           GeometryType(geometry) as geom_type
+           AsGeoJSON("${safeGeomCol}") as geojson_geom,
+           GeometryType("${safeGeomCol}") as geom_type
     FROM "${safeTableName}"
     WHERE ${filterClause}
     LIMIT ${safeLimit};
@@ -339,6 +377,9 @@ export async function fetchGeoJSONFeatures(
           )
         })
       : table.columns.filter((c: any) => !isGeometryColumn(c.name))
+
+  // Projection lookup for this table (if spatial metadata exists)
+  const tableProjection = await getProjectionForTable(db, table.name)
 
   // Process rows in small batches to allow GC to run
   const BATCH_SIZE = 5000
@@ -369,11 +410,15 @@ export async function fetchGeoJSONFeatures(
         }
       }
 
-      // Parse and simplify geometry
-      const geometry = parseAndSimplifyGeometry(row.geojson_geom, coordPrecision)
+      // Parse geometry string/object, apply projection if needed, and simplify
+      let geometry = parseAndSimplifyGeometry(row.geojson_geom, coordPrecision)
       if (!geometry) {
         rows[r] = null
         continue
+      }
+
+      if (geometry.coordinates && tableProjection.transform) {
+        geometry.coordinates = transformCoordinates(geometry.coordinates, tableProjection.transform)
       }
 
       features.push({ type: 'Feature', geometry, properties })
@@ -393,6 +438,82 @@ export async function fetchGeoJSONFeatures(
   rows = null as any // Remove reference so original array can be GC'd
 
   return features
+}
+
+// --- Projection helpers (from polaris/db.ts) --------------------------------
+type ProjectionInfo = {
+  srid: number | null
+  transform: ((xy: [number, number]) => [number, number]) | null
+}
+
+const tableProjectionCache = new Map<string, ProjectionInfo>()
+
+async function lookupTableSrid(db: any, tableName: string): Promise<number | null> {
+  try {
+    const rows = await db.exec(
+      `SELECT srid FROM geometry_columns WHERE lower(f_table_name) = lower('${tableName}') LIMIT 1;`
+    ).get.objs
+    return rows?.[0]?.srid ?? null
+  } catch (err) {
+    return null
+  }
+}
+
+async function lookupProjectionDefinition(db: any, srid: number): Promise<string | null> {
+  try {
+    const rows = await db.exec(
+      `SELECT proj4text, srtext FROM spatial_ref_sys WHERE srid = ${srid} LIMIT 1;`
+    ).get.objs
+    if (!rows || rows.length === 0) return null
+    return rows[0].proj4text || rows[0].srtext || null
+  } catch (err) {
+    return null
+  }
+}
+
+function transformCoordinates(
+  coords: any,
+  transform: (xy: [number, number]) => [number, number]
+): any {
+  if (!coords || !Array.isArray(coords)) return coords
+  if (coords.length > 0 && typeof coords[0] === 'number') {
+    const [x, y, ...rest] = coords
+    const [tx, ty] = transform([x as number, y as number])
+    return [tx, ty, ...rest]
+  }
+  return coords.map((c: any) => transformCoordinates(c, transform))
+}
+
+async function getProjectionForTable(db: any, tableName: string): Promise<ProjectionInfo> {
+  const cached = tableProjectionCache.get(tableName)
+  if (cached) return cached
+
+  const srid = await lookupTableSrid(db, tableName)
+  if (!srid || srid === 4326) {
+    const info = { srid: srid ?? null, transform: null }
+    tableProjectionCache.set(tableName, info)
+    return info
+  }
+
+  const definition = await lookupProjectionDefinition(db, srid)
+  if (!definition) {
+    const info = { srid, transform: null }
+    tableProjectionCache.set(tableName, info)
+    return info
+  }
+
+  let transform: ProjectionInfo['transform'] = null
+  try {
+    const sourceProj = proj4(definition)
+    const destProj = proj4.WGS84
+    transform = (xy: [number, number]) => proj4(sourceProj, destProj, xy as any) as [number, number]
+  } catch (err) {
+    transform = null
+  }
+
+  const info = { srid, transform }
+  tableProjectionCache.set(tableName, info)
+  return info
 }
 
 interface CachedDb {

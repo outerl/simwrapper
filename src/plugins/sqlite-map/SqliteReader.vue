@@ -19,7 +19,7 @@
 </template>
 
 <script lang="ts">
-import { defineComponent } from 'vue'
+import { defineComponent, markRaw } from 'vue'
 import globalStore from '@/store'
 import {
   initSql,
@@ -178,6 +178,7 @@ export default defineComponent({
           lazyDbLoader,
           memoryOptions
         )
+        this.geoJsonFeatures = markRaw(features)
 
         // Release main database after feature extraction
         releaseMainDbFromVm(this)
