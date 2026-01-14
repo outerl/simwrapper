@@ -26,6 +26,9 @@ import HTTPFileSystem from '@/js/HTTPFileSystem'
 import globalStore from '@/store'
 import { arrayBufferToBase64 } from '@/js/util'
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome'
+import { openDb } from '@/plugins/sqlite-map/db'
+import { initSql } from '@/plugins/sqlite-map/loader'
+import { loadDbWithCache } from '@/plugins/sqlite-map/helpers'
 
 const BASE_URL = import.meta.env.BASE_URL
 
@@ -48,11 +51,7 @@ export default defineComponent({
       // dataSet is either x,y or allRows[]
       dataSet: {} as { data?: any; x?: any[]; y?: any[]; allRows?: any },
       YAMLrequirementsOverview: { dataset: '' },
-      colors: [
-        '#dddddd00', // light gray
-        '#dddddd00', // light gray
-        '#dddddd00', // light gray
-        '#dddddd00', // light gray
+      colors: [ // TODO: add option for a different color palette. Monochrome, vivid, pastel? Column in CSV to define colour?
         '#F08080', // Light coral pink
         '#FFB6C1', // Pale pink
         '#FFDAB9', // peach
@@ -74,7 +73,7 @@ export default defineComponent({
         '#FFC0CB', // pink
         '#FFA500', // Orange
       ],
-      colorsD3: [
+      colorsD3: [ // TODO: remove? Is this being used?
         '#1F77B4',
         '#FF7F0E',
         '#2CA02C',
@@ -133,7 +132,7 @@ export default defineComponent({
     },
   },
   async mounted() {
-    this.dataSet = await this.loadFile()
+    this.dataSet = await this.buildDataset()
     this.validateDataSet()
     await this.loadImages()
     this.$emit('isLoaded')
@@ -203,6 +202,78 @@ export default defineComponent({
         this.$emit('error', 'Error loading: ' + filename)
       }
       return []
+    },
+
+    async getDataFromSQLQuery(database: string, query: string) {
+      try {
+        // sanitise query first, let us fail early if bad
+        const sanitisedQuery = query.trim()
+        // Basic safety check: disallow obvious injection patterns and dangerous statements
+        const unsafePattern =
+          /;\s*\b(ALTER|DROP|INSERT|UPDATE|DELETE|REPLACE|ATTACH|DETACH|VACUUM|PRAGMA)\b|--/i
+        if (unsafePattern.test(sanitisedQuery)) {
+          console.log('Unsafe query detected: ' + sanitisedQuery)
+          throw new Error('Invalid (unsafe!) query in layer dataset: ' + sanitisedQuery)
+        }
+        // open a sqlite connection
+        const spl = await initSql()
+
+        console.log("SPL connection open!")
+        
+        // connect to database
+        const db = await loadDbWithCache(spl, this.fileApi, openDb, database)
+        console.log("Database connected!")
+        
+        // run query and return result
+        const queryResult = await db.exec(sanitisedQuery).get.first
+        console.log("Query executed!")
+        console.log(queryResult) 
+
+        return queryResult
+      } catch (e) {
+        console.error('' + e)
+        this.$emit('error', 'Error querying database: ' + database)
+      }
+      return { data: [] }
+    },
+
+    async buildDataset() {
+      // Datasets can be defined in a handful of ways.
+      // If `dataset` value is a string, it's a .csv to load.
+      if (typeof this.config.dataset === 'string') {
+        return await this.loadFile()
+      }
+      // It can be database & sql query
+      if (this.config.dataset.database && this.config.dataset.query) {
+        return await this.getDataFromSQLQuery(
+          this.config.dataset.database,
+          this.config.dataset.query
+        )
+      }
+      // Otherwise it's a list of key-value pairs.
+      // Values can either be static or be a database & sql query returning a single value.
+      if (Array.isArray(this.config.dataset)) {
+        const data: any[] = []
+        for (const item of this.config.dataset) {
+          const key = item.key
+          const row = []
+          row.push(key)
+
+          // if the database/query are defined
+          if (item.value?.database && item.value?.query) { 
+            const result = await this.getDataFromSQLQuery(
+              item.value.database,
+              item.value.query
+            )
+            row.push(result)
+          } else { // otherwise it's a static value
+            row.push(item.value)
+          }
+          
+          data.push(row)
+        }
+        return { data: data }
+      }
     },
 
     validateYAML() {
