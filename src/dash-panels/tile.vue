@@ -48,7 +48,7 @@ const BASE_URL = import.meta.env.BASE_URL
 //
 //     where tiles_dataset.csv may look like:
 //       Vehicle miles travelled,12345,car_icon.png
-//       Favourite colour,orange,
+//       Favourite color,orange,
 //
 //   (2) via a .sqlite database table
 //   - type: 'tile'
@@ -81,6 +81,53 @@ const BASE_URL = import.meta.env.BASE_URL
 //           database: project_database.sqlite
 //           query: "SELECT AVG(speed) FROM trips;"
 //
+// Additionally, the color palette for the tiles can be set via the `colors` config option.
+// Options are 'pastel' (default), 'vivid', and 'monochrome'. Usage:
+//   - type: 'tile'
+//     title: "My Tile Panel"
+//     dataset: tiles_dataset.csv
+//     colors: vivid
+
+// color palette options
+const PALETTE_PASTEL = [
+  '#F08080', // Light coral pink
+  '#FFB6C1', // Pale pink
+  '#FFDAB9', // peach
+  '#FFECB3', // cream yellow
+  '#B0E0E6', // light blue
+  '#98FB98', // light green
+  '#FFD700', // golden yellow
+  '#FFA07A', // salmon pink
+  '#E0FFFF', // light turquoise
+  '#FFDAB9', // pink
+  '#FFC0CB', // pink
+  '#FFA500', // orange
+  '#FF8C00', // dark orange
+  '#FF7F50', // coral red
+  '#FFE4B5', // papaya
+  '#ADD8E6', // light blue
+  '#90EE90', // light green
+  '#FFD700', // golden yellow
+  '#FFC0CB', // pink
+  '#FFA500', // Orange
+]
+
+const PALETTE_VIVID = [
+  '#FF006E', // Vivid Pink
+  '#FB5607', // Vivid Orange
+  '#FFBE0B', // Vivid Yellow
+  '#8338EC', // Vivid Purple
+  '#3A86FF', // Vivid Blue
+  '#06FFA5', // Vivid Green
+  '#FF4365', // Vivid Red
+  '#00D9FF', // Vivid Cyan
+  '#FF006E', // Vivid Magenta
+  '#FB5607', // Deep Orange
+]
+
+const PALETTE_MONOCHROME = [
+  '#f7f7fe', // Light gray
+]
 
 export default defineComponent({
   name: 'Tile',
@@ -101,28 +148,7 @@ export default defineComponent({
       // dataSet is either x,y or allRows[]
       dataSet: {} as { data?: any; x?: any[]; y?: any[]; allRows?: any },
       YAMLrequirementsOverview: { dataset: '' },
-      colors: [ // TODO: add option for a different color palette. Monochrome, vivid, pastel? Column in CSV to define colour?
-        '#F08080', // Light coral pink
-        '#FFB6C1', // Pale pink
-        '#FFDAB9', // peach
-        '#FFECB3', // cream yellow
-        '#B0E0E6', // light blue
-        '#98FB98', // light green
-        '#FFD700', // golden yellow
-        '#FFA07A', // salmon pink
-        '#E0FFFF', // light turquoise
-        '#FFDAB9', // pink
-        '#FFC0CB', // pink
-        '#FFA500', // orange
-        '#FF8C00', // dark orange
-        '#FF7F50', // coral red
-        '#FFE4B5', // papaya
-        '#ADD8E6', // light blue
-        '#90EE90', // light green
-        '#FFD700', // golden yellow
-        '#FFC0CB', // pink
-        '#FFA500', // Orange
-      ],
+      colors: PALETTE_PASTEL,
       colorsD3: [ // TODO: remove? Is this being used?
         '#1F77B4',
         '#FF7F0E',
@@ -182,6 +208,19 @@ export default defineComponent({
     },
   },
   async mounted() {
+    // Set color palette from config if specified, otherwise default to pastel
+    if (this.config.colors) {
+      const paletteKey = this.config.colors.toLowerCase()
+      if (paletteKey === 'vivid') {
+        this.colors = PALETTE_VIVID
+      } else if (paletteKey === 'monochrome') {
+        this.colors = PALETTE_MONOCHROME
+      } else {
+        // Default to pastel for any other value or unrecognized palette
+        this.colors = PALETTE_PASTEL
+      }
+    }
+    
     this.dataSet = await this.buildDataset()
     this.validateDataSet()
     await this.loadImages()
