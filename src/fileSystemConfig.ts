@@ -249,5 +249,3 @@ try {
 } catch (e) {
   console.error('ERROR MERGING URL SHORTCUTS:', '' + e)
 }
-
-export default fileSystems

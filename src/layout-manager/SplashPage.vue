@@ -12,6 +12,26 @@
 
     .markdown(v-if="readme" v-html="readme")
 
+    //- QUICK START ==================
+    h4.az-title(style="margin-top: 1rem;") Quick start tools
+    .az-quick-start-items.flex-row
+      .az-quick-item.flex-col(v-if="isChrome" @click="showChromeDirectory")
+        .az-quick-icon: i.fa.fa-folder
+        .az-quick-label View<br>local files
+      .az-quick-item.flex-col(@click="go('/matrix')")
+        .az-quick-icon: i.fa.fa-th
+        .az-quick-label Matrix<br>viewer
+      //- .az-quick-item.flex-col(@click="go('/map')")
+      //-  . az-quick-icon: i.fa.fa-plus
+      //-   .az-quick-label Map builder<br>(beta)
+      .az-quick-item.flex1.spacer &nbsp;
+
+      settings-panel.settings-popup(v-if="showSettings" @close="showSettings=false")
+      .az-quick-item.flex-col(v-else @click="showSettings = !showSettings")
+        .az-quick-icon: i.fa.fa-cog
+        .az-quick-label Settings
+
+
     //- LOCAL FOLDERS ==================
     .is-chrome(v-if="isChrome")
       h4.az-title Local folders
@@ -33,6 +53,60 @@
           @click="showChromeDirectory"
         ): b View local files...
 
+
+    //- DATA SOURCES ==================
+    h4.az-title Data sources
+    .az-grid
+      //- .az-cell &nbsp;
+      .az-cell.heading Resource
+      .az-cell.heading Description
+      .az-row(v-for="project in mainRoots" :key="project.slug")
+        //- .az-cell(style="padding-right: 0.5rem; font-size: 12px;"): i.fa.fa-network-wired
+        .az-cell.has-link
+          i.fa.fa-sitemap.az-icon(style="color: #99cc00")
+          a(@click="clickedOnFolder({root: project.slug})") {{ project.name}}
+        .az-cell {{ project.description}}
+    p
+      | Add more cloud data sources from the&nbsp;
+      a(@click="openDataStrip()"): b data sources
+      | &nbsp;tab on the left-side panel.
+
+
+    //- FAVORITES =========================
+    h4.az-title Favorites ⭐️
+
+    p(v-if="!state.favoriteLocations.length") Click the star ⭐️ in the top right of any view or dashboard to add it to this list.
+
+    .az-grid(v-else)
+      .az-cell.heading Item
+      .az-cell.heading Location
+      .az-row(v-for="favorite in state.favoriteLocations" :key="favorite.fullPath"
+        @click="clickedOnFavorite(favorite)"
+      )
+        .az-cell
+          i.fa.fa-folder(style="padding-right: 0.5rem; font-size: 14px; color: #ea0;")
+          a(@click="clickedOnFavorite(favorite)") {{ favorite.label }}
+        .az-cell {{ `${favorite.root}/${favorite.subfolder}` }}
+
+
+    //- DOCUMENTATION ==================
+    h4.az-title Documentation and Help
+
+    .flex-row.az-quick-start-items
+      a.az-quick-item.flex-col(href="https://simwrapper.github.io/docs" target="_blank")
+        .az-quick-icon: i.fa.fa-book
+        .az-quick-label Main<br>docs
+      a.az-quick-item.flex-col(href="https://simwrapper.github.io/docs/guide-getting-started " target="_blank")
+        .az-quick-icon: i.fa.fa-flag-checkered
+        .az-quick-label Tutorial
+      a.az-quick-item.flex-col(href="https://github.com/orgs/simwrapper/discussions" target="_blank")
+        .az-quick-icon: i.fa.fa-comments
+        .az-quick-label Ask<br>questions
+      a.az-quick-item.flex-col(href="https://github.com/simwrapper/simwrapper/issues" target="_blank")
+        .az-quick-icon: i.fa.fa-spider
+        .az-quick-label Report<br>an issue
+
+
     //- EXAMPLE DASHBOARDS  ==================
     h4.az-title Example dashboards
     p.mb1 Explore these example dashboards to get a feeling for what SimWrapper can do:
@@ -51,12 +125,74 @@
     .newbie-area.white-text
       .content
 
-        p SimWrapper is a visualisation tool, primarily for transport simulation model outputs. Check out the work by the original developers at 
-          a(href="https://vsp.tu-berlin.de/en/" target="_blank" rel="noopener") SimWrapper Github repository
-          |  or visit 
-          a(href="https://simwrapper.app" target="_blank" rel="noopener") the site 
-          | to try it out online.
-          
+        img.screenshot(:src="images.berlin")
+
+        p
+          | SimWrapper is a unique, web-based data visualization tool for researchers building disaggregate transportation simulations with software such as&nbsp;
+          a(href="https://matsim.org") MATSim
+          | &nbsp;and&nbsp;
+          a(href="https://activitysim.github.io") ActivitySim.
+
+        p Explore simulation results directly, or create interactive project dashboards with Simwrapper. It provides many statistical views and chart types, just like other visualization frameworks. But SimWrapper also knows a lot about transportation, and has good defaults for producing visualizations of network link volumes, agent movements through time, aggregate area maps, scenario comparison, and a lot more.
+
+        p You don't need to be a coder to use SimWrapper -- you point it at your files and write some small text configuration files to tell SimWrapper what to do. SimWrapper does the rest!
+
+        p The open-source code and plugin architecture of SimWrapper allows developers (you!) to fork the project and create your own visualizations, too. But you don't need to be a software developer to use SimWrapper if it already does what you need.
+
+        p
+          | SimWrapper is a
+          b &nbsp;100% client-side&nbsp;
+          | browser application. There is no back-end database, no tracking cookies, and no data is transferred from your browser to any server; everything on your computer stays on your local computer.
+
+
+    //- SPONSORS -------------------------------------------------------------------
+
+    .sponsors-area.dark-text
+      .content
+
+        b.section-head.zcaps Funding partners
+
+        .links-and-logos
+          .logos
+            .one-logo(v-for="logo in allLogos" :key="logo.url")
+              a(:href="logo.url"
+                 :title="logo.name"
+                 target="_blank"
+              ): img.img-logo(:src="logo.image")
+
+        p Funded by TU Berlin; the German Bundesministerium für Bildung und Forschung; the Deutsche Forschungsgemeinschaft; and the ActivitySim Consortium member agencies listed above. Thank you for your support!
+
+
+    //- FOOTER -------------------------------------------------------------------
+
+    .diagonal
+     .footer-area.white-text
+      .content
+
+        .flex-col
+          .badges
+            a(href='https://vsp.berlin/' target="_blank"): img.vsp-logo(src="@/assets/vsp-logo/vsp-2023-logo.png")
+
+          .legal.flex1
+            h4.section-head SimWrapper
+            p &copy; 2025 Technische Universität Berlin
+
+            h4 Build information
+            p Version: &nbsp;
+              b {{  git.tag }}
+            p Built from commit: &nbsp;
+              b {{  git.commit }}
+            p SimWrapper is open source and available on&nbsp;
+              a(href="https://github.com/simwrapper/simwrapper") GitHub.
+            .flex-row(style="gap: 1rem; margin-top: 1rem;")
+              a(href="https://vsp.berlin/en/" target="_blank") VSP&nbsp;TU&nbsp;Berlin
+              a(href="https://vsp.berlin/impressum/" target="_blank") Impressum
+              a(href="https://www.vsp.tu-berlin.de/menue/service/privacy/parameter/en/" target="_blank") Privacy
+
+
+    .very-bottom
+      p .&nbsp;.
+
 </template>
 
 <script lang="ts">

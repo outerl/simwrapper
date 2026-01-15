@@ -332,7 +332,7 @@ export default defineComponent({
             opacity: this.opacity,
             pickable: true,
             pointRadiusUnits: this.pointRadiusUnits,
-            pointRadiusMinPixels: 0,
+            pointRadiusMinPixels: 2,
             // pointRadiusMaxPixels: 50,
             stroked: this.isStroked,
             // useDevicePixels: this.isTakingScreenshot,
