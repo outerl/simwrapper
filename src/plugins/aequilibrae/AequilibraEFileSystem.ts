@@ -9,10 +9,6 @@
 import HTTPFileSystem from '../../js/HTTPFileSystem'
 import { FileSystemConfig } from '@/Globals'
 
-/**
- * Interface representing the structure of an AequilibraE project
- * with its typical database components
- */
 export interface AequilibraEProject {
   /** Main project metadata database buffer */
   metadataDb?: ArrayBuffer
@@ -22,22 +18,11 @@ export interface AequilibraEProject {
   resultsDb?: ArrayBuffer
 }
 
-/**
- * File system handler specifically designed for AequilibraE projects
- * Provides detection and database listing capabilities
- */
 export default class AequilibraEFileSystem extends HTTPFileSystem {
   constructor(project: FileSystemConfig, store?: any) {
     super(project, store)
   }
 
-  /**
-   * Detects if a folder contains an AequilibraE project
-   * by looking for typical AequilibraE database files
-   * 
-   * @param subfolder - The subfolder path to check
-   * @returns Promise<boolean> - True if AequilibraE project is detected
-   */
   public async isAequilibraEProject(subfolder: string): Promise<boolean> {
     try {
       const { files } = await this.getDirectory(subfolder)
@@ -59,12 +44,6 @@ export default class AequilibraEFileSystem extends HTTPFileSystem {
     }
   }
 
-  /**
-   * Lists all SQLite database files in an AequilibraE project folder
-   * 
-   * @param subfolder - The subfolder path to search
-   * @returns Promise<string[]> - Array of SQLite database filenames
-   */
   public async listAequilibraEDatabases(subfolder: string): Promise<string[]> {
     if (await this.isAequilibraEProject(subfolder)) {
       const { files } = await this.getDirectory(subfolder)
@@ -73,12 +52,6 @@ export default class AequilibraEFileSystem extends HTTPFileSystem {
     return []
   }
 
-  /**
-   * Loads an AequilibraE database file as an ArrayBuffer
-   * 
-   * @param filepath - Path to the database file
-   * @returns Promise<ArrayBuffer | null> - Database as ArrayBuffer, or null if failed
-   */
   public async loadAequilibraEDatabase(filepath: string): Promise<ArrayBuffer | null> {
     try {
       const blob = await this.getFileBlob(filepath)

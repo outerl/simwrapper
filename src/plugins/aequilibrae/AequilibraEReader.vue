@@ -43,7 +43,7 @@ import globalStore from '@/store'
 import { FileSystemConfig } from '@/Globals'
 import AequilibraEFileSystem from './AequilibraEFileSystem'
 import SqliteReader from '@/plugins/sqlite-map/SqliteReader.vue'
-import { parseYamlConfig } from './useAequilibrae'
+import { parseYamlConfig } from './parseYaml'
 import { resolvePath } from '../sqlite-map/utils'
 import { clearAllDbCaches } from '../sqlite-map/db'
 import DeckMapComponent from '@/plugins/shape-file/DeckMapComponent.vue'
@@ -90,18 +90,16 @@ const MyComponent = defineComponent({
 
   watch: {
     resize() {
-      // Trigger redraw through SqliteReader's slot data
       this.$forceUpdate()
     },
     root() {
-      // Clear caches when switching projects
       this.clearCaches()
     },
   },
 
-  beforeUnmount() {
-    // Cleanup is handled by SqliteReader
-  },
+  // beforeUnmount() { // TODO: check if I even need this here, sqlite-map should handle it
+  //   // Cleanup is handled by SqliteReader
+  // },
 
   async mounted() {
     try {
@@ -159,7 +157,6 @@ const MyComponent = defineComponent({
       } else {
         throw new Error('No config or yamlConfig provided')
       }
-      // initialView is provided by SqliteReader; no local computation necessary
     },
 
     handleFeatureClick(feature: any) {

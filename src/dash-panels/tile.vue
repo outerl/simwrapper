@@ -222,7 +222,7 @@ export default defineComponent({
     }
     
     this.dataSet = await this.buildDataset()
-    this.validateDataSet()
+    // this.validateDataSet()
     await this.loadImages()
     this.$emit('isLoaded')
     console.log(this.dataSet)
@@ -366,7 +366,6 @@ export default defineComponent({
           })
         )
         return { data: data }
-        }
       }
     },
 
