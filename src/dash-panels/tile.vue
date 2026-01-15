@@ -26,8 +26,108 @@ import HTTPFileSystem from '@/js/HTTPFileSystem'
 import globalStore from '@/store'
 import { arrayBufferToBase64 } from '@/js/util'
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome'
+import { openDb } from '@/plugins/sqlite-map/db'
+import { initSql } from '@/plugins/sqlite-map/loader'
+import { loadDbWithCache } from '@/plugins/sqlite-map/helpers'
 
 const BASE_URL = import.meta.env.BASE_URL
+
+// == USAGE ==
+// TODO: submit PR back to simwrapper docs re: these changes.
+//
+// Tile panels previously must be defined using static key-value pairs in a .csv file. This leads
+// to some issues have multiple sources of "truth" for data. To remedy this, we implement the 
+// ability to read from sqlite databases directly, to pair with AequilibraE/other sqlite-based
+// transport models.
+//
+// There are now four ways to define a tile panel. In dashboard.yaml, 
+//   (1) via a .csv file
+//   - type: 'tile'
+//     title: "My Tile Panel"
+//     dataset: tiles_dataset.csv
+//
+//     where tiles_dataset.csv may look like:
+//       Vehicle miles travelled,12345,car_icon.png
+//       Favourite color,orange,
+//
+//   (2) via a .sqlite database table
+//   - type: 'tile'
+//     title: "My Tile Panel"
+//     dataset:
+//       database: project_database.sqlite
+//       query: "SELECT metric, value FROM metadata_table;"  
+//       titleCol: metric            (n.b., optional, these default to 'metric' and 'value')
+//       valueCol: value
+//
+//   (3) via a list of key-value pairs, where values are static
+//   - type: 'tile'
+//     title: "My Tile Panel"
+//     dataset:
+//       - key: "Total trips"
+//         value: 54321
+//       - key: "Average speed"
+//         value: 23.4
+//
+//   (4) via a list of key-value pairs, where values are defined by a .sqlite database query
+//   - type: 'tile'
+//     title: "My Tile Panel"
+//     dataset:
+//       - key: "Total trips"
+//         value:
+//           database: project_database.sqlite
+//           query: "SELECT COUNT(*) FROM trips;"
+//       - key: "Average speed"
+//         value:
+//           database: project_database.sqlite
+//           query: "SELECT AVG(speed) FROM trips;"
+//
+// Additionally, the color palette for the tiles can be set via the `colors` config option.
+// Options are 'pastel' (default), 'vivid', and 'monochrome'. Usage:
+//   - type: 'tile'
+//     title: "My Tile Panel"
+//     dataset: tiles_dataset.csv
+//     colors: vivid
+
+// color palette options
+const PALETTE_PASTEL = [
+  '#F08080', // Light coral pink
+  '#FFB6C1', // Pale pink
+  '#FFDAB9', // peach
+  '#FFECB3', // cream yellow
+  '#B0E0E6', // light blue
+  '#98FB98', // light green
+  '#FFD700', // golden yellow
+  '#FFA07A', // salmon pink
+  '#E0FFFF', // light turquoise
+  '#FFDAB9', // pink
+  '#FFC0CB', // pink
+  '#FFA500', // orange
+  '#FF8C00', // dark orange
+  '#FF7F50', // coral red
+  '#FFE4B5', // papaya
+  '#ADD8E6', // light blue
+  '#90EE90', // light green
+  '#FFD700', // golden yellow
+  '#FFC0CB', // pink
+  '#FFA500', // Orange
+]
+
+const PALETTE_VIVID = [
+  '#FF006E', // Vivid Pink
+  '#FB5607', // Vivid Orange
+  '#FFBE0B', // Vivid Yellow
+  '#8338EC', // Vivid Purple
+  '#3A86FF', // Vivid Blue
+  '#06FFA5', // Vivid Green
+  '#FF4365', // Vivid Red
+  '#00D9FF', // Vivid Cyan
+  '#FF1493', // Vivid Deep Pink
+  '#FF8C00', // Vivid Deep Orange
+]
+
+const PALETTE_MONOCHROME = [
+  '#f7f7fe', // Light gray
+]
 
 export default defineComponent({
   name: 'Tile',
@@ -48,33 +148,8 @@ export default defineComponent({
       // dataSet is either x,y or allRows[]
       dataSet: {} as { data?: any; x?: any[]; y?: any[]; allRows?: any },
       YAMLrequirementsOverview: { dataset: '' },
-      colors: [
-        '#dddddd00', // light gray
-        '#dddddd00', // light gray
-        '#dddddd00', // light gray
-        '#dddddd00', // light gray
-        '#F08080', // Light coral pink
-        '#FFB6C1', // Pale pink
-        '#FFDAB9', // peach
-        '#FFECB3', // cream yellow
-        '#B0E0E6', // light blue
-        '#98FB98', // light green
-        '#FFD700', // golden yellow
-        '#FFA07A', // salmon pink
-        '#E0FFFF', // light turquoise
-        '#FFDAB9', // pink
-        '#FFC0CB', // pink
-        '#FFA500', // orange
-        '#FF8C00', // dark orange
-        '#FF7F50', // coral red
-        '#FFE4B5', // papaya
-        '#ADD8E6', // light blue
-        '#90EE90', // light green
-        '#FFD700', // golden yellow
-        '#FFC0CB', // pink
-        '#FFA500', // Orange
-      ],
-      colorsD3: [
+      colors: PALETTE_PASTEL,
+      colorsD3: [ // TODO: remove? Is this being used?
         '#1F77B4',
         '#FF7F0E',
         '#2CA02C',
@@ -133,7 +208,20 @@ export default defineComponent({
     },
   },
   async mounted() {
-    this.dataSet = await this.loadFile()
+    // Set color palette from config if specified, otherwise default to pastel
+    if (this.config.colors) {
+      const paletteKey = this.config.colors.toLowerCase()
+      if (paletteKey === 'vivid') {
+        this.colors = PALETTE_VIVID
+      } else if (paletteKey === 'monochrome') {
+        this.colors = PALETTE_MONOCHROME
+      } else {
+        // Default to pastel for any other value or unrecognized palette
+        this.colors = PALETTE_PASTEL
+      }
+    }
+    
+    this.dataSet = await this.buildDataset()
     this.validateDataSet()
     await this.loadImages()
     this.$emit('isLoaded')
@@ -203,6 +291,83 @@ export default defineComponent({
         this.$emit('error', 'Error loading: ' + filename)
       }
       return []
+    },
+
+    async getDataFromSQLQuery(database: string, query: string, singleValue = true, titleColumn = 'metric', valueColumn = 'value') {
+      try {
+        // sanitise query first, let us fail early if bad
+        const sanitisedQuery = query.trim()
+        // Basic safety check: disallow obvious injection patterns and dangerous statements
+        const unsafePattern =
+          /;\s*\b(ALTER|DROP|INSERT|UPDATE|DELETE|REPLACE|ATTACH|DETACH|VACUUM|PRAGMA)\b|--/i
+        if (unsafePattern.test(sanitisedQuery)) {
+          throw new Error('Invalid (unsafe!) query in tile: ' + sanitisedQuery)
+        }
+        // open a sqlite connection
+        const spl = await initSql()
+
+        // connect to database
+        const db = await loadDbWithCache(spl, this.fileApi, openDb, database)
+        
+        // run query and return result
+        if (singleValue) {
+          const queryResult = await db.exec(sanitisedQuery).get.first
+          return queryResult
+        } else {
+          const queryResult = await db.exec(sanitisedQuery).get.objs
+          const results = []
+          for (const obj of queryResult) {
+            results.push([obj[titleColumn], obj[valueColumn]]) // table columns default to 'metric' and 'value'
+          }
+          return results
+        }
+      } catch (e) {
+        console.error('' + e)
+        this.$emit('error', 'Error querying database: ' + database)
+      }
+      return { data: [] }
+    },
+
+    async buildDataset() {
+      // Datasets can be defined in a handful of ways.
+      // If `dataset` value is a string, it's a .csv to load.
+      if (typeof this.config.dataset === 'string') {
+        return await this.loadFile()
+      }
+      // It can be database & sql query
+      if (this.config.dataset.database && this.config.dataset.query) {
+        return { data: await this.getDataFromSQLQuery(
+          this.config.dataset.database,
+          this.config.dataset.query,
+          false,
+          this.config.dataset.titleCol || 'metric',
+          this.config.dataset.valueCol || 'value'
+        ) }
+      }
+      // Otherwise it's a list of key-value pairs.
+      // Values can either be static or be a database & sql query returning a single value.
+      if (Array.isArray(this.config.dataset)) {
+        const data: any[] = await Promise.all(
+          this.config.dataset.map(async (item: any) => {
+            const key = item.key
+            const row: any[] = []
+            row.push(key)
+            // if the database/query are defined
+            if (item.value?.database && item.value?.query) {
+              const result = await this.getDataFromSQLQuery(
+                item.value.database,
+                item.value.query
+              )
+              row.push(result)
+            } else { // otherwise it's a static value
+              row.push(item.value)
+            }
+            return row
+          })
+        )
+        return { data: data }
+        }
+      }
     },
 
     validateYAML() {
