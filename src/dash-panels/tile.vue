@@ -36,7 +36,7 @@ const BASE_URL = import.meta.env.BASE_URL
 // TODO: submit PR back to simwrapper docs re: these changes.
 //
 // Tile panels previously must be defined using static key-value pairs in a .csv file. This leads
-// to some issues have multiple sources of "truth" for data. To rememdy this, we implement the 
+// to some issues have multiple sources of "truth" for data. To remedy this, we implement the 
 // ability to read from sqlite databases directly, to pair with AequilibraE/other sqlite-based
 // transport models.
 //
@@ -121,8 +121,8 @@ const PALETTE_VIVID = [
   '#06FFA5', // Vivid Green
   '#FF4365', // Vivid Red
   '#00D9FF', // Vivid Cyan
-  '#FF006E', // Vivid Magenta
-  '#FB5607', // Deep Orange
+  '#FF1493', // Vivid Deep Pink
+  '#FF8C00', // Vivid Deep Orange
 ]
 
 const PALETTE_MONOCHROME = [
@@ -301,7 +301,7 @@ export default defineComponent({
         const unsafePattern =
           /;\s*\b(ALTER|DROP|INSERT|UPDATE|DELETE|REPLACE|ATTACH|DETACH|VACUUM|PRAGMA)\b|--/i
         if (unsafePattern.test(sanitisedQuery)) {
-          throw new Error('Invalid (unsafe!) query in layer dataset: ' + sanitisedQuery)
+          throw new Error('Invalid (unsafe!) query in tile: ' + sanitisedQuery)
         }
         // open a sqlite connection
         const spl = await initSql()
@@ -319,7 +319,6 @@ export default defineComponent({
           for (const obj of queryResult) {
             results.push([obj[titleColumn], obj[valueColumn]]) // table columns default to 'metric' and 'value'
           }
-          console.log(results)
           return results
         }
       } catch (e) {
@@ -348,26 +347,26 @@ export default defineComponent({
       // Otherwise it's a list of key-value pairs.
       // Values can either be static or be a database & sql query returning a single value.
       if (Array.isArray(this.config.dataset)) {
-        const data: any[] = []
-        for (const item of this.config.dataset) {
-          const key = item.key
-          const row = []
-          row.push(key)
-
-          // if the database/query are defined
-          if (item.value?.database && item.value?.query) { 
-            const result = await this.getDataFromSQLQuery(
-              item.value.database,
-              item.value.query
-            )
-            row.push(result)
-          } else { // otherwise it's a static value
-            row.push(item.value)
-          }
-          
-          data.push(row)
-        }
+        const data: any[] = await Promise.all(
+          this.config.dataset.map(async (item: any) => {
+            const key = item.key
+            const row: any[] = []
+            row.push(key)
+            // if the database/query are defined
+            if (item.value?.database && item.value?.query) {
+              const result = await this.getDataFromSQLQuery(
+                item.value.database,
+                item.value.query
+              )
+              row.push(result)
+            } else { // otherwise it's a static value
+              row.push(item.value)
+            }
+            return row
+          })
+        )
         return { data: data }
+        }
       }
     },
 
