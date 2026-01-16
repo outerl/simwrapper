@@ -85,12 +85,12 @@ export async function buildGeoFeatures(
             joinedData = await getCachedJoinData(extraDb, layerConfig.join, neededColumn)
           } else {
             console.warn(
-              `⚠️ Extra database '${layerConfig.join.database}' not found for layer '${layerName}'`
+              `Extra database '${layerConfig.join.database}' not found for layer '${layerName}'`
             )
           }
         } catch (e) {
           console.warn(
-            `⚠️ Failed to load join data from ${layerConfig.join.database}.${layerConfig.join.table}:`,
+            `Failed to load join data from ${layerConfig.join.database}.${layerConfig.join.table}:`,
             e
           )
         }

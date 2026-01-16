@@ -14,7 +14,7 @@ aeq-reader.aeq-panel(
 import { defineComponent } from 'vue'
 import type { PropType } from 'vue'
 
-import AeqReader from '@/plugins/aequilibrae-map/AequilibraEReader.vue'
+import AeqReader from '@/plugins/aequilibrae-map/AequilibraEMapComponent.vue'
 
 export default defineComponent({
   name: 'AequilibraEMapPanel',

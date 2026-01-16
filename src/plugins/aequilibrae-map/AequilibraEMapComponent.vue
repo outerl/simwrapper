@@ -1,6 +1,6 @@
 <template lang="pug">
 .c-aequilibrae-viewer.flex-col(:class="{'is-thumbnail': thumbnail}")
-  SqliteReader(
+  SqliteMapComponent(
     :config="vizConfig"
     :subfolder="subfolder"
     :fileApi="fileApi"
@@ -42,7 +42,7 @@ import { defineComponent } from 'vue'
 import globalStore from '@/store'
 import { FileSystemConfig } from '@/Globals'
 import HTTPFileSystem from '@/js/HTTPFileSystem'
-import SqliteReader from '@/plugins/sqlite-map/SqliteReader.vue'
+import SqliteMapComponent from '@/plugins/sqlite-map/SqliteMapComponent.vue'
 import { parseYamlConfig } from './parseYaml'
 import { resolvePath } from '../sqlite-map/utils'
 import DeckMapComponent from '@/plugins/shape-file/DeckMapComponent.vue'
@@ -51,8 +51,8 @@ import BackgroundLayers from '@/js/BackgroundLayers'
 import type { VizDetails } from '../sqlite-map/types'
 
 export default defineComponent({
-  name: 'AequilibraEReader',
-  components: { DeckMapComponent, LegendColors, SqliteReader },
+  name: 'AequilibraEMapComponent',
+  components: { DeckMapComponent, LegendColors, SqliteMapComponent },
   props: {
     root: { type: String, required: true },
     subfolder: { type: String, required: true },
@@ -81,7 +81,7 @@ export default defineComponent({
       return project
     },
     legendBgColor(): string {
-      return this.globalState.isDarkMode ? 'rgba(32,32,32,0.95)' : 'rgba(255,255,255,0.95)'
+      return this.globalState.isDarkMode ? 'rgba(32,32,32,0.95)' : 'rgba(255,255,255,0.95)' // TODO hardcoded?
     },
   },
 
@@ -131,11 +131,7 @@ export default defineComponent({
       }
     },
 
-    handleFeatureClick(feature: any) {
-      console.log('Feature clicked:', feature)
-    },
-
-    handleTooltip(hoverInfo: any) {
+    handleTooltip(hoverInfo: any) { // TODO: expand to show link id & rendered value?
       const props = hoverInfo?.object?.properties
       return props
         ? Object.entries(props)

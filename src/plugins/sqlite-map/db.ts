@@ -9,6 +9,8 @@
  * @author SimWrapper Development Team
  */
 
+// TODO clean
+
 import proj4 from 'proj4'
 import type { JoinConfig, GeoFeature, SqliteDb, SPL } from './types'
 import {
@@ -170,6 +172,7 @@ export async function fetchGeoJSONFeatures(
   layerConfig: any,
   // Backwards-compatible parameters: callers for POLARIS pass (db, table, layerName, layerConfig, options, filterConfigs)
   // AequilibraE callers pass (db, table, layerName, layerConfig, joinedData?, joinConfig?, options?)
+  // TODO everything will call the same way
   joinedDataOrOptions?: Map<any, Record<string, any>> | { limit?: number; coordinatePrecision?: number; minimalProperties?: boolean },
   joinConfigOrFilter?: JoinConfig | any,
   optionsMaybe?: {
@@ -261,7 +264,7 @@ export async function fetchGeoJSONFeatures(
     layerConfig &&
     typeof layerConfig.sqlFilter === 'string' &&
     layerConfig.sqlFilter.trim().length > 0
-  ) {
+  ) { // TODO remove sql filtering
     const sqlFilter = layerConfig.sqlFilter.trim()
     // Basic safety check: disallow obvious injection patterns and dangerous statements
     const unsafePattern =
@@ -344,7 +347,7 @@ export async function fetchGeoJSONFeatures(
       }
 
       // Parse geometry string/object, apply projection if needed
-      let geometry = parseGeometry(row.geojson_geom)
+      let geometry = parseGeometry(row.geojson_geom) // TODO review
       if (!geometry) {
         rows[r] = null
         continue
@@ -462,7 +465,7 @@ const dbLoadPromises = new Map<string, Promise<SqliteDb>>()
  * Open a database, using cache if available.
  * Multiple maps using the same database file will share one instance.
  */
-export async function openDb(spl: SPL, arrayBuffer: ArrayBuffer, path?: string): Promise<SqliteDb> {
+export async function openDb(spl: SPL, arrayBuffer: ArrayBuffer, path?: string): Promise<SqliteDb> { // TODO drop ref count?
   // If no path provided, can't cache - just open directly
   if (!path) {
     return spl.db(arrayBuffer)

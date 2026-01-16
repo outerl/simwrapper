@@ -1,4 +1,4 @@
-<template>
+<template> 
   <div class="sqlite-reader">
     <div v-if="loading" class="loading">{{ loadingText }}</div>
     <slot
@@ -19,6 +19,7 @@
 </template>
 
 <script lang="ts">
+  // TODO: pug template above
 import { defineComponent, markRaw } from 'vue'
 import globalStore from '@/store'
 import { initSql, releaseSql, acquireLoadingSlot } from './loader'
@@ -34,7 +35,7 @@ import { buildTables, buildGeoFeatures } from './feature-builder'
 import type { GeoFeature, VizDetails } from './types'
 
 export default defineComponent({
-  name: 'SqliteReader',
+  name: 'SqliteMapComponent',
   props: {
     /** Configuration object with database path, layers, and styling */
     config: { type: Object as any, required: true },

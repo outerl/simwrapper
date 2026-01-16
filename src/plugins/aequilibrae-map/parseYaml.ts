@@ -29,8 +29,8 @@ export async function parseYamlConfig(
     zoom: config.zoom,
     bearing: config.bearing,
     pitch: config.pitch,
-    geometryLimit: config.geometryLimit,
-    coordinatePrecision: config.coordinatePrecision,
+    geometryLimit: config.geometryLimit, // TODO remove
+    coordinatePrecision: config.coordinatePrecision, // TODO remove
     minimalProperties: config.minimalProperties,
     defaults: config.defaults,
     legend: config.legend,

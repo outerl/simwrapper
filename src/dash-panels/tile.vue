@@ -246,7 +246,7 @@ export default defineComponent({
       valueColumn = 'value'
     ) {
       try {
-        // sanitise query first, let us fail early if bad
+        // sanitise query first, let us fail early if bad // TODO remove
         const sanitisedQuery = query.trim()
         // Basic safety check: disallow obvious injection patterns and dangerous statements
         const unsafePattern =
