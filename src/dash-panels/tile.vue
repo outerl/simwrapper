@@ -32,62 +32,6 @@ import { loadDbWithCache } from '@/plugins/sqlite-map/helpers'
 
 const BASE_URL = import.meta.env.BASE_URL
 
-// == USAGE ==
-// TODO: submit PR back to simwrapper docs re: these changes.
-//
-// Tile panels previously must be defined using static key-value pairs in a .csv file. This leads
-// to some issues have multiple sources of "truth" for data. To remedy this, we implement the
-// ability to read from sqlite databases directly, to pair with AequilibraE/other sqlite-based
-// transport models.
-//
-// There are now four ways to define a tile panel. In dashboard.yaml,
-//   (1) via a .csv file
-//   - type: 'tile'
-//     title: "My Tile Panel"
-//     dataset: tiles_dataset.csv
-//
-//     where tiles_dataset.csv may look like:
-//       Vehicle miles travelled,12345,car_icon.png
-//       Favourite color,orange,
-//
-//   (2) via a .sqlite database table
-//   - type: 'tile'
-//     title: "My Tile Panel"
-//     dataset:
-//       database: project_database.sqlite
-//       query: "SELECT metric, value FROM metadata_table;"
-//       titleCol: metric            (n.b., optional, these default to 'metric' and 'value')
-//       valueCol: value
-//
-//   (3) via a list of key-value pairs, where values are static
-//   - type: 'tile'
-//     title: "My Tile Panel"
-//     dataset:
-//       - key: "Total trips"
-//         value: 54321
-//       - key: "Average speed"
-//         value: 23.4
-//
-//   (4) via a list of key-value pairs, where values are defined by a .sqlite database query
-//   - type: 'tile'
-//     title: "My Tile Panel"
-//     dataset:
-//       - key: "Total trips"
-//         value:
-//           database: project_database.sqlite
-//           query: "SELECT COUNT(*) FROM trips;"
-//       - key: "Average speed"
-//         value:
-//           database: project_database.sqlite
-//           query: "SELECT AVG(speed) FROM trips;"
-//
-// Additionally, the color palette for the tiles can be set via the `colors` config option.
-// Options are 'pastel' (default), 'vivid', and 'monochrome'. Usage:
-//   - type: 'tile'
-//     title: "My Tile Panel"
-//     dataset: tiles_dataset.csv
-//     colors: vivid
-
 // color palette options
 const PALETTE_PASTEL = [
   '#F08080', // Light coral pink
