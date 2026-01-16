@@ -1,5 +1,3 @@
-// Feature builder: buildTables and buildGeoFeatures moved into sqlite-map
-
 import type { SqliteDb } from './types'
 import {
   getTableNames,

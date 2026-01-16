@@ -1,23 +1,7 @@
-/**
- * Helper utilities for sqlite-map plugin
- *
- * Generic utilities for styling, database loading, and memory management
- * that can be used by any visualization using sqlite-map.
- */
-
 import { markRaw } from 'vue'
-import { buildStyleArrays } from './styling'
+import { buildStyleArrays } from './styling/styling'
 import type { SqliteDb, VizDetails } from './types'
 
-/**
- * Apply pre-computed styles to a Vue component instance.
- * Marks feature data as raw to prevent Vue reactivity overhead.
- *
- * @param vm - Vue component instance to update
- * @param features - GeoJSON features array
- * @param vizDetails - Visualization configuration
- * @param layerConfigs - Layer style configurations
- */
 export function applyStylesToVm(
   vm: any,
   features: any[],

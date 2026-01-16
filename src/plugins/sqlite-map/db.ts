@@ -15,7 +15,6 @@ import {
   ESSENTIAL_SPATIAL_COLUMNS,
   isGeometryColumn,
   getUsedColumns,
-  simplifyCoordinates,
   createJoinCacheKey,
 } from './utils'
 
@@ -83,69 +82,8 @@ export async function queryTable(
   return result
 }
 
-/**
- * Perform an in-memory join between main data and external data
- * @param mainData - Array of records from the main table
- * @param joinData - Array of records from the join table
- * @param joinConfig - Configuration specifying join keys and type
- * @returns Merged array with joined columns added to main records
- */
-export function performJoin(
-  mainData: Record<string, any>[],
-  joinData: Record<string, any>[],
-  joinConfig: JoinConfig
-): Record<string, any>[] {
-  const joinLookup = new Map<any, Record<string, any>>()
-  for (const row of joinData) {
-    const key = row[joinConfig.rightKey]
-    if (key !== undefined && key !== null) {
-      joinLookup.set(key, row)
-    }
-  }
-
-  return mainData
-    .map(mainRow => {
-      const joinRow = joinLookup.get(mainRow[joinConfig.leftKey])
-
-      if (!joinRow && joinConfig.type !== 'left') {
-        return null // Skip non-matching rows in inner join
-      }
-
-      if (!joinRow) {
-        return mainRow // Left join: keep main row without joined data
-      }
-
-      // Extract only the columns specified, or all columns
-      const joinedColumns = joinConfig.columns?.length
-        ? Object.fromEntries(
-            joinConfig.columns
-              .map(col => [col, joinRow[col]])
-              .filter(([_, value]) => value !== undefined)
-          )
-        : { ...joinRow }
-
-      return { ...mainRow, ...joinedColumns }
-    })
-    .filter((row): row is Record<string, any> => row !== null)
-}
-
 // Cache for joinData
 const joinDataCache: Map<string, Map<any, Record<string, any>>> = new Map()
-
-export function clearJoinCache(key?: string) {
-  if (key) {
-    joinDataCache.delete(key)
-  } else {
-    joinDataCache.clear()
-  }
-}
-
-export function getJoinCacheStats() {
-  return {
-    keys: Array.from(joinDataCache.keys()),
-    size: joinDataCache.size,
-  }
-}
 
 /**
  * Get cached joinData or load it if not cached
@@ -205,14 +143,10 @@ function buildPropertiesFromRow(
   return properties
 }
 
-// Helper: parse GeoJSON string/object and simplify coordinates if needed
-function parseAndSimplifyGeometry(geojson: any, coordPrecision: number): any | null {
+// Helper: parse GeoJSON string/object
+function parseGeometry(geojson: any): any | null {
   try {
-    const geometry = typeof geojson === 'string' ? JSON.parse(geojson) : geojson
-    if (geometry && geometry.coordinates && coordPrecision < 15) {
-      geometry.coordinates = simplifyCoordinates(geometry.coordinates, coordPrecision)
-    }
-    return geometry
+    return typeof geojson === 'string' ? JSON.parse(geojson) : geojson
   } catch (e) {
     return null
   }
@@ -267,7 +201,6 @@ export async function fetchGeoJSONFeatures(
   }
 
   const limit = options?.limit ?? 1000000 // Default limit
-  const coordPrecision = options?.coordinatePrecision ?? 5
   const minimalProps = options?.minimalProperties ?? true
 
   // Resolve joined data early so we can reuse the cached Map instead of rebuilding arrays per row
@@ -410,8 +343,8 @@ export async function fetchGeoJSONFeatures(
         }
       }
 
-      // Parse geometry string/object, apply projection if needed, and simplify
-      let geometry = parseAndSimplifyGeometry(row.geojson_geom, coordPrecision)
+      // Parse geometry string/object, apply projection if needed
+      let geometry = parseGeometry(row.geojson_geom)
       if (!geometry) {
         rows[r] = null
         continue
@@ -567,27 +500,6 @@ export async function openDb(spl: SPL, arrayBuffer: ArrayBuffer, path?: string):
 }
 
 /**
- * Release a reference to a cached database.
- * The database is closed when refCount reaches 0.
- */
-export function releaseDb(path: string): void {
-  const cached = dbCache.get(path)
-  if (!cached) return
-
-  cached.refCount--
-  if (cached.refCount <= 0) {
-    try {
-      if (typeof cached.db.close === 'function') {
-        cached.db.close()
-      }
-    } catch (e) {
-      console.warn(`Failed to close database ${path}:`, e)
-    }
-    dbCache.delete(path)
-  }
-}
-
-/**
  * Force close all cached databases and clear file cache. Use with caution - only call when
  * you're sure no maps are using any databases.
  */
@@ -604,19 +516,5 @@ export function clearAllDbCaches(): void {
   dbCache.clear()
   dbLoadPromises.clear()
 
-  // also clear the join data cache, if it exists
-  if (typeof joinDataCache !== 'undefined') {
-    joinDataCache.clear()
-  }
-}
-
-// Backwards-compatible alias for clearing all caches
-export const clearAllCaches = clearAllDbCaches
-
-export function getDbCacheStats() {
-  const entries = Array.from(dbCache.entries()).map(([path, v]) => ({ path, refCount: v.refCount }))
-  return {
-    size: dbCache.size,
-    entries,
-  }
+  joinDataCache.clear()
 }
