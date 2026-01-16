@@ -1,25 +1,23 @@
-<template> 
-  <div class="sqlite-reader">
-    <div v-if="loading" class="loading">{{ loadingText }}</div>
-    <slot
-      v-if="!loading"
-      :geoJsonFeatures="geoJsonFeatures"
-      :legendItems="legendItems"
-      :fillColors="fillColors"
-      :lineColors="lineColors"
-      :lineWidths="lineWidths"
-      :pointRadii="pointRadii"
-      :fillHeights="fillHeights"
-      :featureFilter="featureFilter"
-      :isRGBA="isRGBA"
-      :redrawCounter="redrawCounter"
-      :initialView="initialView"
-    ></slot>
-  </div>
+<template lang="pug">
+.sqlite-reader
+  .loading(v-if="loading") {{ loadingText }}
+  slot(
+    v-if="!loading"
+    :geoJsonFeatures="geoJsonFeatures"
+    :legendItems="legendItems"
+    :fillColors="fillColors"
+    :lineColors="lineColors"
+    :lineWidths="lineWidths"
+    :pointRadii="pointRadii"
+    :fillHeights="fillHeights"
+    :featureFilter="featureFilter"
+    :isRGBA="isRGBA"
+    :redrawCounter="redrawCounter"
+    :initialView="initialView"
+  )
 </template>
 
 <script lang="ts">
-  // TODO: pug template above
 import { defineComponent, markRaw } from 'vue'
 import globalStore from '@/store'
 import { initSql, releaseSql, acquireLoadingSlot } from './loader'
@@ -243,9 +241,7 @@ export default defineComponent({
         this.releaseSlot()
         this.releaseSlot = null
       }
-      console.log('here')
       this.buildLegend()
-      console.log('here2')
 
       // Compute and apply initial view from config after geometries are ready so DeckMap
       // initializes with the correct camera when the slot renders.

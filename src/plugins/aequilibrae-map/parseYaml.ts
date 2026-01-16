@@ -27,12 +27,11 @@ export async function parseYamlConfig(
     layers: config.layers || {},
     center: config.center,
     zoom: config.zoom,
+    projection: config.projection,
     bearing: config.bearing,
     pitch: config.pitch,
-    geometryLimit: config.geometryLimit, // TODO remove
-    coordinatePrecision: config.coordinatePrecision, // TODO remove
+    geometryLimit: config.geometryLimit,
     minimalProperties: config.minimalProperties,
-    defaults: config.defaults,
     legend: config.legend,
   }
 }

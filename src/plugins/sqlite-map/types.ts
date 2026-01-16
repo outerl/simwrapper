@@ -37,15 +37,7 @@ export interface VizDetails {
   bearing?: number
   pitch?: number
   geometryLimit?: number
-  coordinatePrecision?: number
   minimalProperties?: boolean
-  defaults?: {
-    fillColor?: string
-    lineColor?: string
-    lineWidth?: number
-    pointRadius?: number
-    fillHeight?: number
-  }
   legend?: Array<{
     label?: string
     color?: string

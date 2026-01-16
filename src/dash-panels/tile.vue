@@ -246,26 +246,17 @@ export default defineComponent({
       valueColumn = 'value'
     ) {
       try {
-        // sanitise query first, let us fail early if bad // TODO remove
-        const sanitisedQuery = query.trim()
-        // Basic safety check: disallow obvious injection patterns and dangerous statements
-        const unsafePattern =
-          /;\s*\b(ALTER|DROP|INSERT|UPDATE|DELETE|REPLACE|ATTACH|DETACH|VACUUM|PRAGMA)\b|--/i
-        if (unsafePattern.test(sanitisedQuery)) {
-          throw new Error('Invalid (unsafe!) query in tile: ' + sanitisedQuery)
-        }
+        const trimmedQuery = query.trim()
         // open a sqlite connection
         const spl = await initSql()
-
         // connect to database
         const db = await loadDbWithCache(spl, this.fileApi, openDb, database)
-
         // run query and return result
         if (singleValue) {
-          const queryResult = await db.exec(sanitisedQuery).get.first
+          const queryResult = await db.exec(trimmedQuery).get.first
           return queryResult
         } else {
-          const queryResult = await db.exec(sanitisedQuery).get.objs
+          const queryResult = await db.exec(trimmedQuery).get.objs
           const results = []
           for (const obj of queryResult) {
             results.push([obj[titleColumn], obj[valueColumn]]) // table columns default to 'metric' and 'value'
