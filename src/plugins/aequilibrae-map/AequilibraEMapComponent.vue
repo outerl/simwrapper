@@ -1,40 +1,44 @@
 <template lang="pug">
 .c-aequilibrae-viewer.flex-col(:class="{'is-thumbnail': thumbnail}")
-  SqliteMapComponent(
-    :config="vizConfig"
-    :subfolder="subfolder"
-    :fileApi="fileApi"
-    @isLoaded="$emit('isLoaded')"
-    v-slot="{ geoJsonFeatures, fillColors, lineColors, lineWidths, pointRadii, fillHeights, featureFilter, isRGBA, redrawCounter, legendItems, initialView }"
-  )
-    DeckMapComponent(
-      ref="deckMap"
-      v-if="geoJsonFeatures.length && bgLayers && layerId"
-      :features="geoJsonFeatures"
-      :bgLayers="bgLayers"
-      :cbTooltip="handleTooltip"
-      :cbClickEvent="handleFeatureClick"
-      :dark="globalState.isDarkMode"
-      :featureFilter="featureFilter"
-      :fillColors="fillColors"
-      :fillHeights="fillHeights"
-      :highlightedLinkIndex="-1"
-      :initialView="initialView"
-      :isRGBA="isRGBA"
-      :isAtlantis="false"
-      :lineColors="lineColors"
-      :lineWidths="lineWidths"
-      :mapIsIndependent="false"
-      :opacity="1"
-      :pointRadii="pointRadii"
-      :redraw="redrawCounter"
-      :screenshot="0"
-      :viewId="layerId"
-      :lineWidthUnits="'meters'"
-      :pointRadiusUnits="'meters'"
+  .map-viewer
+    SqliteMapComponent(
+      ref="sqliteReader"
+      :config="vizConfig"
+      :subfolder="subfolder"
+      :fileApi="fileApi"
+      @isLoaded="$emit('isLoaded')"
+      v-slot="{ geoJsonFeatures, fillColors, lineColors, lineWidths, pointRadii, fillHeights, featureFilter, isRGBA, redrawCounter, legendItems: slotLegendItems, initialView }"
     )
-    .legend-overlay(v-if="legendItems.length" :style="{background: legendBgColor}")
-      LegendColors(:items="legendItems" title="Legend")
+      DeckMapComponent(
+        ref="deckMap"
+        v-if="geoJsonFeatures.length && bgLayers && layerId"
+        :features="geoJsonFeatures"
+        :bgLayers="bgLayers"
+        :cbTooltip="handleTooltip"
+        :cbClickEvent="handleFeatureClick"
+        :dark="globalState.isDarkMode"
+        :featureFilter="featureFilter"
+        :fillColors="fillColors"
+        :fillHeights="fillHeights"
+        :highlightedLinkIndex="-1"
+        :initialView="initialView"
+        :isRGBA="isRGBA"
+        :isAtlantis="false"
+        :lineColors="lineColors"
+        :lineWidths="lineWidths"
+        :mapIsIndependent="false"
+        :opacity="1"
+        :pointRadii="pointRadii"
+        :redraw="redrawCounter"
+        :screenshot="0"
+        :viewId="layerId"
+        :lineWidthUnits="'meters'"
+        :pointRadiusUnits="'meters'"
+      )
+      template(v-if="slotLegendItems.length")
+        // Store legend items for use outside the slot
+  .legend-overlay(v-if="currentLegendItems.length" :style="{background: legendBgColor}")
+    LegendColors(:items="currentLegendItems" title="Legend")
 </template>
 
 <script lang="ts">
@@ -69,6 +73,7 @@ export default defineComponent({
       layerId: `aeq-${uid}`,
       fileApi: null as HTTPFileSystem | null,
       bgLayers: null as BackgroundLayers | null,
+      currentLegendItems: [] as Array<{ label: string; color: string; value: any }>,
     }
   },
 
@@ -92,6 +97,17 @@ export default defineComponent({
   },
 
   async mounted() {
+    // Watch for legend changes from SqliteMapComponent
+    this.$watch(
+      () => (this.$refs.sqliteReader as any)?.legendItems,
+      (newVal) => {
+        if (newVal) {
+          this.currentLegendItems = newVal
+        }
+      },
+      { deep: true }
+    )
+
     try {
       this.fileApi = new HTTPFileSystem(this.fileSystem, globalStore)
       if (this.thumbnail) {
@@ -156,6 +172,7 @@ export default defineComponent({
   background-color: var(--bgCardFrame);
   display: flex;
   flex-direction: column;
+  z-index: 0;
 }
 
 .map-viewer {
@@ -163,18 +180,20 @@ export default defineComponent({
   flex: 1;
   width: 100%;
   height: 100%;
+  z-index: 1;
 }
 
 .legend-overlay {
   position: absolute;
   top: 1rem;
   right: 1rem;
-  z-index: 10;
+  z-index: 100;
   border-radius: 6px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   padding: 0.5rem 1rem;
   min-width: 120px;
   max-width: 240px;
+  pointer-events: auto;
 }
 
 .loading {

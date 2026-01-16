@@ -186,13 +186,19 @@ export default defineComponent({
       const legend = this.config.legend
 
       if (Array.isArray(legend)) {
-        this.legendItems = legend
-          .filter((entry: any) => !entry.subtitle)
-          .map((entry: any) => ({
+        this.legendItems = legend.map(entry => {
+          if (entry.subtitle) {
+            return { type: 'subtitle', label: entry.subtitle }
+          }
+
+          return {
+            type: entry.shape || 'line',
             label: entry.label || '',
-            color: this.convertColorForLegend(entry.color) || '#808080',
+            color: this.convertColorForLegend(entry.color),
+            size: entry.size,
             value: entry.label || '',
-          }))
+          }
+        })
       } else {
         this.legendItems = []
       }
@@ -237,7 +243,9 @@ export default defineComponent({
         this.releaseSlot()
         this.releaseSlot = null
       }
+      console.log('here')
       this.buildLegend()
+      console.log('here2')
 
       // Compute and apply initial view from config after geometries are ready so DeckMap
       // initializes with the correct camera when the slot renders.
