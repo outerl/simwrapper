@@ -36,11 +36,11 @@ const BASE_URL = import.meta.env.BASE_URL
 // TODO: submit PR back to simwrapper docs re: these changes.
 //
 // Tile panels previously must be defined using static key-value pairs in a .csv file. This leads
-// to some issues have multiple sources of "truth" for data. To remedy this, we implement the 
+// to some issues have multiple sources of "truth" for data. To remedy this, we implement the
 // ability to read from sqlite databases directly, to pair with AequilibraE/other sqlite-based
 // transport models.
 //
-// There are now four ways to define a tile panel. In dashboard.yaml, 
+// There are now four ways to define a tile panel. In dashboard.yaml,
 //   (1) via a .csv file
 //   - type: 'tile'
 //     title: "My Tile Panel"
@@ -55,7 +55,7 @@ const BASE_URL = import.meta.env.BASE_URL
 //     title: "My Tile Panel"
 //     dataset:
 //       database: project_database.sqlite
-//       query: "SELECT metric, value FROM metadata_table;"  
+//       query: "SELECT metric, value FROM metadata_table;"
 //       titleCol: metric            (n.b., optional, these default to 'metric' and 'value')
 //       valueCol: value
 //
@@ -149,7 +149,8 @@ export default defineComponent({
       dataSet: {} as { data?: any; x?: any[]; y?: any[]; allRows?: any },
       YAMLrequirementsOverview: { dataset: '' },
       colors: PALETTE_PASTEL,
-      colorsD3: [ // TODO: remove? Is this being used?
+      colorsD3: [
+        // TODO: remove? Is this being used?
         '#1F77B4',
         '#FF7F0E',
         '#2CA02C',
@@ -201,10 +202,10 @@ export default defineComponent({
       return new HTTPFileSystem(this.fileSystemConfig, globalStore)
     },
     tileBorderColor(): string {
-      return this.globalState.isDarkMode ? '#fff' : '#000';
+      return this.globalState.isDarkMode ? '#fff' : '#000'
     },
     tileTextColor(): string {
-      return this.globalState.isDarkMode ? '#fff' : '#363636';
+      return this.globalState.isDarkMode ? '#fff' : '#363636'
     },
   },
   async mounted() {
@@ -220,7 +221,7 @@ export default defineComponent({
         this.colors = PALETTE_PASTEL
       }
     }
-    
+
     this.dataSet = await this.buildDataset()
     // this.validateDataSet()
     await this.loadImages()
@@ -293,7 +294,13 @@ export default defineComponent({
       return []
     },
 
-    async getDataFromSQLQuery(database: string, query: string, singleValue = true, titleColumn = 'metric', valueColumn = 'value') {
+    async getDataFromSQLQuery(
+      database: string,
+      query: string,
+      singleValue = true,
+      titleColumn = 'metric',
+      valueColumn = 'value'
+    ) {
       try {
         // sanitise query first, let us fail early if bad
         const sanitisedQuery = query.trim()
@@ -308,7 +315,7 @@ export default defineComponent({
 
         // connect to database
         const db = await loadDbWithCache(spl, this.fileApi, openDb, database)
-        
+
         // run query and return result
         if (singleValue) {
           const queryResult = await db.exec(sanitisedQuery).get.first
@@ -336,13 +343,15 @@ export default defineComponent({
       }
       // It can be database & sql query
       if (this.config.dataset.database && this.config.dataset.query) {
-        return { data: await this.getDataFromSQLQuery(
-          this.config.dataset.database,
-          this.config.dataset.query,
-          false,
-          this.config.dataset.titleCol || 'metric',
-          this.config.dataset.valueCol || 'value'
-        ) }
+        return {
+          data: await this.getDataFromSQLQuery(
+            this.config.dataset.database,
+            this.config.dataset.query,
+            false,
+            this.config.dataset.titleCol || 'metric',
+            this.config.dataset.valueCol || 'value'
+          ),
+        }
       }
       // Otherwise it's a list of key-value pairs.
       // Values can either be static or be a database & sql query returning a single value.
@@ -354,12 +363,10 @@ export default defineComponent({
             row.push(key)
             // if the database/query are defined
             if (item.value?.database && item.value?.query) {
-              const result = await this.getDataFromSQLQuery(
-                item.value.database,
-                item.value.query
-              )
+              const result = await this.getDataFromSQLQuery(item.value.database, item.value.query)
               row.push(result)
-            } else { // otherwise it's a static value
+            } else {
+              // otherwise it's a static value
               row.push(item.value)
             }
             return row
@@ -409,8 +416,8 @@ export default defineComponent({
     getTileStyle(index: number) {
       return {
         'background-color': this.colors[index % this.colors.length],
-        'border': '1px solid ' + this.tileBorderColor,
-        'color': this.tileTextColor
+        border: '1px solid ' + this.tileBorderColor,
+        color: this.tileTextColor,
       }
     },
   },

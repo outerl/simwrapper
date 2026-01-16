@@ -21,18 +21,11 @@
 <script lang="ts">
 import { defineComponent, markRaw } from 'vue'
 import globalStore from '@/store'
-import {
-  initSql,
-  releaseSql,
-  acquireLoadingSlot,
-  mapLoadingComplete,
-  getTotalMapsLoading,
-} from './loader'
+import { initSql, releaseSql, acquireLoadingSlot } from './loader'
 import {
   applyStylesToVm,
   loadDbWithCache,
   releaseMainDbFromVm,
-  getMemoryLimits,
   createLazyDbLoader,
 } from './helpers'
 import { openDb, getTableNames, getTableSchema, getRowCount } from './db'
@@ -149,14 +142,8 @@ export default defineComponent({
       try {
         this.loadingText = 'Extracting geometries...'
 
-        // Auto-scale memory limits based on concurrent map loading
-        const totalMaps = getTotalMapsLoading()
-        const { autoLimit, autoPrecision } = getMemoryLimits(totalMaps)
-
-        // Memory optimization options - config values override auto-scaling
         const memoryOptions = {
-          limit: this.config.geometryLimit ?? autoLimit,
-          coordinatePrecision: this.config.coordinatePrecision ?? autoPrecision,
+          limit: this.config.geometryLimit ?? 100000,
           minimalProperties: this.config.minimalProperties !== false,
         }
 
@@ -270,19 +257,16 @@ export default defineComponent({
         this.releaseSlot()
         this.releaseSlot = null
       }
-      mapLoadingComplete()
       this.$emit('isLoaded')
     }
   },
 
   beforeUnmount() {
-    // Always release the loading slot if acquired, even if loading didn't complete
     if (this.releaseSlot) {
       this.releaseSlot()
       this.releaseSlot = null
     }
     this.cleanupMemory()
-    mapLoadingComplete()
   },
 })
 </script>

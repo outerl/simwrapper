@@ -133,25 +133,18 @@ export type BuildResult = {
   featureFilter: Float32Array
 }
 
-// =============================================================================
-// Runtime / DB related types
-// =============================================================================
-
-/** Lightweight representation of a GeoJSON Feature used by the plugin */
 export interface GeoFeature {
   type: 'Feature'
   geometry: any
   properties: Record<string, any>
 }
 
-/** Basic shape for the SQLite DB wrapper returned by the SPL runtime */
 export interface SqliteDb {
   exec: (sql: string) => { get: { objs: any[] } } | any
   close?: () => void
   [k: string]: any
 }
 
-/** SPL runtime instance interface (only the parts we use) */
 export interface SPL {
   db: (arrayBuffer: ArrayBuffer) => Promise<SqliteDb> | SqliteDb
   [k: string]: any
