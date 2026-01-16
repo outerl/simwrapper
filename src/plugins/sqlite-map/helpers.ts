@@ -26,11 +26,6 @@ export function applyStylesToVm(
   })
 }
 
-/**
- * Release the main database connection and clear related data.
- *
- * @param vm - Vue component instance to update
- */
 export function releaseMainDbFromVm(vm: any) {
   vm.db = null
   vm.tables = []

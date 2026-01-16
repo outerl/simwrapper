@@ -48,8 +48,6 @@ export async function buildGeoFeatures(
   lazyDbLoader?: LazyDbLoader,
   options?: GeoFeatureOptions
 ) {
-  // Use static imports for join helpers (avoid dynamic imports)
-
   const plain = Object.assign({}, layerConfigs)
   const layersToProcess = Object.keys(plain).length
     ? Object.entries(plain)

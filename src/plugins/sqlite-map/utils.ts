@@ -92,15 +92,6 @@ export function hasGeometryColumn(columns: Array<ColumnInfo>): boolean {
   return columns.some(c => isGeometryColumn(c.name))
 }
 
-/**
- * Create a cache key for join operations
- *
- * @param database - Database name
- * @param table - Table name
- * @param column - Column name (optional)
- * @param filter - Filter clause (optional)
- * @returns Cache key string
- */
 export function createJoinCacheKey(
   database: string,
   table: string,

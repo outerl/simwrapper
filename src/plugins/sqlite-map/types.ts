@@ -1,31 +1,17 @@
-// Type definitions for AequilibraE plugin (layers, styles, DB, runtime types)
-
-/** Supported geometry types for spatial data visualization */
-
 export type GeometryType = 'polygon' | 'line' | 'point'
 
-/**
- * Configuration for joining data from an external database table
- * to a layer's features. This allows visualization of results data
- * (e.g., simulation outputs) on top of network geometry.
- */
+// join between two databases
 export interface JoinConfig {
-  /** Key referencing an entry in extraDatabases */
   database: string
-  /** Table name in the external database to join from */
   table: string
-  /** Column name in the main layer table to join on */
   leftKey: string
-  /** Column name in the external table to join on */
   rightKey: string
-  /** Join type: 'left' keeps all main records, 'inner' only keeps matches. Default: 'left' */
   type?: 'left' | 'inner'
-  /** Optional: specific columns to include from the joined table (default: all) */
   columns?: string[]
-  /** Optional: SQL WHERE clause to filter rows in the joined table (e.g., 'volume > 100') */
   filter?: string
 }
 
+// config for a map layer
 export interface LayerConfig {
   table: string
   type: GeometryType
@@ -69,14 +55,10 @@ export interface VizDetails {
   }>
 }
 
-// =============================================================================
-// Color and Styling Type Definitions
-// =============================================================================
-
 export type RGBA = [number, number, number, number]
 export type RGB = [number, number, number]
 
-// Quantitative color style: numeric column mapped to a palette
+// quantitative color style: numeric column mapped to a palette
 export type QuantitativeColorStyle = {
   column: string
   type?: 'quantitative'
@@ -88,7 +70,7 @@ export type QuantitativeColorStyle = {
   dataRange?: [number, number]
 }
 
-// Categorical color style: mapping of category -> hex color
+// categorical color style: mapping of category -> hex color
 export type CategoricalColorStyle = {
   column: string
   type?: 'categorical'
@@ -174,6 +156,3 @@ export interface SPL {
   db: (arrayBuffer: ArrayBuffer) => Promise<SqliteDb> | SqliteDb
   [k: string]: any
 }
-
-/** Lazy loader for extra databases used by buildGeoFeatures */
-export type LazyDbLoader = (dbName: string) => Promise<SqliteDb | null>
