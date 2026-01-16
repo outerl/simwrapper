@@ -86,7 +86,7 @@ export default defineComponent({
       return project
     },
     legendBgColor(): string {
-      return this.globalState.isDarkMode ? 'rgba(32,32,32,0.95)' : 'rgba(255,255,255,0.95)' // TODO hardcoded?
+      return this.globalState.isDarkMode ? 'rgba(32,32,32,0.95)' : 'rgba(255,255,255,0.95)' // TODO: move this logic to the legend
     },
   },
 
@@ -147,7 +147,7 @@ export default defineComponent({
       }
     },
 
-    handleTooltip(hoverInfo: any) { // TODO: expand to show link id & rendered value?
+    handleTooltip(hoverInfo: any) { // TODO: expand to show link id & rendered value
       const props = hoverInfo?.object?.properties
       return props
         ? Object.entries(props)
