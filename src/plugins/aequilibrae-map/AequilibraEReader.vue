@@ -3,7 +3,7 @@
   SqliteReader(
     :config="vizConfig"
     :subfolder="subfolder"
-    :fileApi="aeqFileSystem"
+    :fileApi="fileApi"
     @isLoaded="$emit('isLoaded')"
     v-slot="{ geoJsonFeatures, fillColors, lineColors, lineWidths, pointRadii, fillHeights, featureFilter, isRGBA, redrawCounter, legendItems, initialView }"
   )
@@ -41,17 +41,16 @@
 import { defineComponent } from 'vue'
 import globalStore from '@/store'
 import { FileSystemConfig } from '@/Globals'
-import AequilibraEFileSystem from './AequilibraEFileSystem'
+import HTTPFileSystem from '@/js/HTTPFileSystem'
 import SqliteReader from '@/plugins/sqlite-map/SqliteReader.vue'
 import { parseYamlConfig } from './parseYaml'
 import { resolvePath } from '../sqlite-map/utils'
-import { clearAllDbCaches } from '../sqlite-map/db'
 import DeckMapComponent from '@/plugins/shape-file/DeckMapComponent.vue'
 import LegendColors from '@/components/LegendColors.vue'
 import BackgroundLayers from '@/js/BackgroundLayers'
 import type { VizDetails } from '../sqlite-map/types'
 
-const MyComponent = defineComponent({
+export default defineComponent({
   name: 'AequilibraEReader',
   components: { DeckMapComponent, LegendColors, SqliteReader },
   props: {
@@ -67,11 +66,9 @@ const MyComponent = defineComponent({
     return {
       globalState: globalStore.state,
       vizConfig: {} as VizDetails,
-      id: uid,
-      layerId: `aequilibrae-layer-${uid}`,
-      aeqFileSystem: null as any,
+      layerId: `aeq-${uid}`,
+      fileApi: null as HTTPFileSystem | null,
       bgLayers: null as BackgroundLayers | null,
-      initialView: null as any,
     }
   },
 
@@ -92,68 +89,43 @@ const MyComponent = defineComponent({
     resize() {
       this.$forceUpdate()
     },
-    root() {
-      this.clearCaches()
-    },
   },
-
-  // beforeUnmount() { // TODO: check if I even need this here, sqlite-map should handle it
-  //   // Cleanup is handled by SqliteReader
-  // },
 
   async mounted() {
     try {
-      this.aeqFileSystem = new AequilibraEFileSystem(this.fileSystem, globalStore)
-      await this.initBackgroundLayers()
+      this.fileApi = new HTTPFileSystem(this.fileSystem, globalStore)
       if (this.thumbnail) {
         this.$emit('isLoaded')
         return
       }
-      await this.getVizDetails()
+      await this.loadConfig()
+      this.bgLayers = new BackgroundLayers({
+        vizDetails: this.vizConfig,
+        fileApi: this.fileApi,
+        subfolder: this.subfolder,
+      })
+      await this.bgLayers.initialLoad()
     } catch (err) {
       console.error('Error loading AequilibraE reader:', err)
     }
   },
 
   methods: {
-    async initBackgroundLayers(): Promise<void> {
-      try {
-        this.bgLayers = new BackgroundLayers({
-          vizDetails: this.vizConfig,
-          fileApi: this.aeqFileSystem,
-          subfolder: this.subfolder,
-        })
-        await this.bgLayers.initialLoad()
-      } catch (error) {
-        console.warn('Background layers failed to load:', error)
-      }
-    },
-
-    resolvePath(filePath: string): string {
-      return resolvePath(filePath, this.subfolder)
-    },
-
-    clearCaches(): void {
-      clearAllDbCaches()
-    },
-
-    async getVizDetails(): Promise<void> {
+    async loadConfig(): Promise<void> {
       if (this.config) {
         this.vizConfig = { ...this.config }
-        this.vizConfig.database = this.resolvePath(this.config.database || this.config.file)
-
+        this.vizConfig.database = resolvePath(this.config.database || this.config.file, this.subfolder)
         if (this.config.extraDatabases) {
           this.vizConfig.extraDatabases = Object.fromEntries(
             Object.entries(this.config.extraDatabases).map(([name, path]) => [
               name,
-              this.resolvePath(path as string),
+              resolvePath(path as string, this.subfolder),
             ])
           )
         }
       } else if (this.yamlConfig) {
-        const yamlBlob = await this.aeqFileSystem.getFileBlob(this.resolvePath(this.yamlConfig))
-        const yamlText = await yamlBlob.text()
-        this.vizConfig = await parseYamlConfig(yamlText, this.subfolder || null)
+        const yamlBlob = await this.fileApi!.getFileBlob(resolvePath(this.yamlConfig, this.subfolder))
+        this.vizConfig = await parseYamlConfig(await yamlBlob.text(), this.subfolder)
       } else {
         throw new Error('No config or yamlConfig provided')
       }
@@ -167,14 +139,12 @@ const MyComponent = defineComponent({
       const props = hoverInfo?.object?.properties
       return props
         ? Object.entries(props)
-            .map(([key, value]) => `${key}: ${value}`)
+            .map(([k, v]) => `${k}: ${v}`)
             .join('<br>')
         : ''
     },
   },
 })
-
-export default MyComponent
 </script>
 
 <style scoped lang="scss">
