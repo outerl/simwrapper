@@ -134,83 +134,13 @@ let fileSystems: FileSystemConfig[] = [
   // ----------- End. Below here, these are editable: -------------------
 
   {
-    name: 'VSP/ZIB LakeFS',
-    hidden: true,
-    slug: 'vsp-zib',
-    description: 'Public VSP data at Zuse Institute Berlin',
-    baseURL: 'https://download.lake-daki.zib.de/?PATH=vsp&dir=matsim',
-    isZIB: true,
-    // 'https://download.lake-daki.zib.de/?PATH=vsp&dir=matsim%2Fcountries%2Fde%2Fberlin%2Fberlin-v6.4%2Foutput%2Fberlin-v6.4-10pct',
-  },
-  {
-    name: 'VSP TU-Berlin',
-    slug: 'public',
-    description: 'Public data at VSP / TU Berlin',
-    baseURL: 'https://svn.vsp.tu-berlin.de/repos/public-svn/matsim/scenarios/countries',
-    thumbnail: '/simwrapper/images/thumb-chart.jpg',
-    skipList: ['episim/battery'],
-  },
-  {
-    name: 'Berlin Open Scenario v6',
-    slug: 'open-berlin',
-    description: 'Standard dashboard from the MATSim SimWrapper contrib',
-    thumbnail: 'images/thumb-localfiles.jpg',
-    baseURL:
-      'https://svn.vsp.tu-berlin.de/repos/public-svn/matsim/scenarios/countries/de/berlin/berlin-v6.4/output/berlin-v6.4-10pct/',
-    example: true,
-  },
-  {
-    name: 'Hamburg RealLabHH',
-    slug: 'reallabhh',
-    description: 'Hamburg, Germany',
-    description_de: 'Hamburg, Deutschland',
-    baseURL:
-      'https://svn.vsp.tu-berlin.de/repos/public-svn/matsim/scenarios/countries/de/hamburg/hamburg-v2/hamburg-v2.2/viz',
-    thumbnail: '/simwrapper/images/thumb-localfiles.jpg',
-    example: true,
-  },
-  {
-    name: 'Berlin BENE Project',
-    slug: 'bene',
-    description: 'widescreen, in German',
-    baseURL:
-      'https://svn.vsp.tu-berlin.de/repos/public-svn/matsim/scenarios/countries/de/berlin/projects/bene/website',
-    thumbnail: '/simwrapper/images/thumb-localfiles.jpg',
+    name: 'Chicago AequilibraE Example',
+    slug: 'chicago-aequilibrae-demo',
+    description: 'Example dashboard using AequilibraE to visualise different assignments on Chicago network',
+    baseURL: 'https://aequilibrae-simwrapper-demo.s3.us-east-1.amazonaws.com/',
+    isS3: true,
     hidden: false,
     example: true,
-  },
-  {
-    name: 'Visualization Examples',
-    slug: 'examples',
-    description: 'Various SimWrapper data vis types',
-    thumbnail: 'images/thumb-localfiles.jpg',
-    baseURL: 'https://svn.vsp.tu-berlin.de/repos/public-svn/shared/simwrapper',
-    example: true,
-  },
-  {
-    name: 'Additional Sample Data',
-    slug: 'sample-data',
-    description: 'Sample data from various cities',
-    thumbnail: 'images/thumb-localfiles.jpg',
-    baseURL: 'https://svn.vsp.tu-berlin.de/repos/public-svn/shared/sample-data',
-    example: true,
-  },
-  {
-    name: 'Localhost:8000',
-    slug: 'local',
-    description: 'Files shared using "simwrapper serve" on http://127.0.0.1:8000',
-    baseURL: 'http://127.0.0.1:8000',
-    thumbnail: '/simwrapper/images/thumb-localfiles.jpg',
-  },
-  {
-    name: 'KoMoDnext',
-    slug: 'komodnext',
-    description: 'Automated driving in the digital test field, Düsseldorf',
-    description_de: 'Automatisiertes Fahren im digitalen Testfeld Düsseldorf',
-    baseURL:
-      'https://svn.vsp.tu-berlin.de/repos/public-svn/matsim/scenarios/countries/de/duesseldorf/projects/komodnext/website',
-    thumbnail: '/simwrapper/images/thumb-localfiles.jpg',
-    hidden: true,
   },
 ]
 
