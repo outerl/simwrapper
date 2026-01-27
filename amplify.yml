@@ -5,11 +5,17 @@ frontend:
       commands:
         - nvm install 20
         - nvm use 20
-        - npm ci
+        - npm ci --prefer-offline --no-audit
     build:
       commands:
+        - export NODE_OPTIONS="--max-old-space-size=7168"
+        - export NODE_ENV=production
+        - export VITE_BUILD_WORKERS=2
         - npm run build
   artifacts:
     baseDirectory: /dist
     files:
       - '**/*'
+  cache:
+    paths:
+      - node_modules/**/*
