@@ -8,10 +8,9 @@ frontend:
         - npm ci --prefer-offline --no-audit
     build:
       commands:
-        - export NODE_OPTIONS="--max-old-space-size=6144"
+        - export NODE_OPTIONS="--max-old-space-size=5120"
         - export NODE_ENV=production
-        - export VITE_BUILD_WORKERS=1
-        - npm run build -- --minify esbuild
+        - npm run build
   artifacts:
     baseDirectory: /dist
     files:

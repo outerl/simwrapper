@@ -28,7 +28,16 @@ export default defineConfig(({ command, mode }) => {
 
   return {
     base: '/',
-    build: { sourcemap: false, target: 'esnext' },
+    build: { 
+      sourcemap: false, 
+      target: 'esnext',
+      minify: false,
+      rollupOptions: {
+        output: {
+          manualChunks: undefined,
+        },
+      },
+    },
     esbuild: { target: 'esnext' },
     optimizeDeps: {
       include: [
