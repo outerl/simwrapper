@@ -31,12 +31,7 @@ export default defineConfig(({ command, mode }) => {
     build: { 
       sourcemap: false, 
       target: 'esnext',
-      minify: 'terser',  // Changed from false
-      terserOptions: {
-        compress: {
-          passes: 1,  // Only 1 pass (faster, less memory)
-        },
-      },
+      minify: false,
       rollupOptions: {
         output: {
           manualChunks: undefined,
