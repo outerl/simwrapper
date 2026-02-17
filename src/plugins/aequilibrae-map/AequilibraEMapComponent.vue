@@ -37,7 +37,10 @@
         :pointRadiusUnits="'meters'"
       )
       div(v-show="false" :data-legend="syncLegend(slotLegendItems)")
-  .legend-overlay(v-if="currentLegendItems && currentLegendItems.length" :style="{background: legendBgColor}")
+
+      zoom-buttons(v-if="!thumbnail")
+
+  .legend-overlay(v-if="currentLegendItems && currentLegendItems.length" :style="{background: legendBgColor, left: '1rem', right: 'unset'}")
     LegendColors(:items="currentLegendItems" title="Legend")
 </template>
 
@@ -51,12 +54,13 @@ import { parseYamlConfig } from './parseYaml'
 import { resolvePath } from '../sqlite-map/utils'
 import DeckMapComponent from '@/plugins/shape-file/DeckMapComponent.vue'
 import LegendColors from '@/components/LegendColors.vue'
+import ZoomButtons from '@/components/ZoomButtons.vue'
 import BackgroundLayers from '@/js/BackgroundLayers'
 import type { VizDetails } from '../sqlite-map/types'
 
 export default defineComponent({
   name: 'AequilibraEMapComponent',
-  components: { DeckMapComponent, LegendColors, SqliteMapComponent },
+  components: { DeckMapComponent, LegendColors, SqliteMapComponent, ZoomButtons },
   props: {
     root: { type: String, required: true },
     subfolder: { type: String, required: true },
@@ -80,6 +84,7 @@ export default defineComponent({
       fileApi: null as HTTPFileSystem | null,
       bgLayers: null as BackgroundLayers | null,
       currentLegendItems: [] as Array<{ label: string; color: string; value: any }>,
+      isDestroyed: false,
     }
   },
 
@@ -104,21 +109,32 @@ export default defineComponent({
 
   async mounted() {
     try {
+      this.isDestroyed = false
       this.fileApi = new HTTPFileSystem(this.fileSystem, globalStore)
       if (this.thumbnail) {
         this.$emit('isLoaded')
         return
       }
       await this.loadConfig()
+      if (this.isDestroyed) return
+
       this.bgLayers = new BackgroundLayers({
         vizDetails: this.vizConfig,
         fileApi: this.fileApi,
         subfolder: this.subfolder,
       })
       await this.bgLayers.initialLoad()
+      if (this.isDestroyed) return
     } catch (err) {
       console.error('Error loading AequilibraE reader:', err)
     }
+  },
+
+  beforeDestroy() {
+    this.isDestroyed = true
+    this.currentLegendItems = []
+    this.bgLayers = null
+    this.fileApi = null
   },
 
   methods: {

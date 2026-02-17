@@ -21,6 +21,7 @@
 import { defineComponent, markRaw } from 'vue'
 import globalStore from '@/store'
 import { initSpl, releaseSpl, acquireLoadingSlot } from './loader'
+/* viewstate-normalizer removed — plugins now provide complete view payloads */
 import {
   applyStylesToVm,
   loadDbWithCache,
@@ -62,6 +63,7 @@ export default defineComponent({
       releaseSlot: null as (() => void) | null,
       spl: null as any,
       initialView: null as any,
+      isDestroyed: false,
     }
   },
 
@@ -127,6 +129,7 @@ export default defineComponent({
       return {
         longitude: lon,
         latitude: lat,
+        center: [lon, lat],
         zoom,
         bearing,
         pitch,
@@ -210,10 +213,19 @@ export default defineComponent({
         .join(',')
     },
 
+    // Release all VM-held references and clear large typed arrays so memory can be
+    // reclaimed. `isDestroyed` prevents late async callbacks from modifying
+    // component state after teardown.
     cleanupMemory(): void {
+      if (this.isDestroyed) return
+      this.isDestroyed = true
+
+      // Drop references to DB objects and decrement shared SPL refcount.
       releaseMainDbFromVm(this)
       releaseSpl()
       this.spl = null
+
+      // Clear feature/style buffers so they're eligible for GC
       this.geoJsonFeatures = []
       this.tables = []
       this.fillColors = new Uint8ClampedArray()
@@ -227,16 +239,26 @@ export default defineComponent({
 
   async mounted() {
     try {
+      this.isDestroyed = false
+
+      // viewstate normalizer removed — plugins now emit both `center` and `longitude`/`latitude`
+
       if (this.config.thumbnail) {
-        this.$emit('isLoaded')
+        if (!this.isDestroyed) this.$emit('isLoaded')
         return
       }
 
       this.loading = true
       this.loadingText = 'Waiting for other maps to load...'
       this.releaseSlot = await acquireLoadingSlot()
+      if (this.isDestroyed) return
+
       await this.loadDatabase()
+      if (this.isDestroyed) return
+
       await this.extractGeometries()
+      if (this.isDestroyed) return
+
       if (this.releaseSlot) {
         this.releaseSlot()
         this.releaseSlot = null
@@ -255,18 +277,24 @@ export default defineComponent({
         }
       }
     } catch (error) {
-      this.loadingText = `Error: ${error instanceof Error ? error.message : String(error)}`
+      if (!this.isDestroyed) {
+        this.loadingText = `Error: ${error instanceof Error ? error.message : String(error)}`
+      }
     } finally {
-      this.loading = false
+      if (!this.isDestroyed) this.loading = false
+
       if (this.releaseSlot) {
         this.releaseSlot()
         this.releaseSlot = null
       }
-      this.$emit('isLoaded')
+
+      if (!this.isDestroyed) {
+        this.$emit('isLoaded')
+      }
     }
   },
 
-  beforeUnmount() {
+  beforeDestroy() {
     if (this.releaseSlot) {
       this.releaseSlot()
       this.releaseSlot = null

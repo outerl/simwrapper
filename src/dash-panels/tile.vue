@@ -27,7 +27,7 @@ import globalStore from '@/store'
 import { arrayBufferToBase64 } from '@/js/util'
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome'
 import { openDb } from '@/plugins/sqlite-map/db'
-import { initSpl } from '@/plugins/sqlite-map/loader'
+import { initSpl, releaseSpl } from '@/plugins/sqlite-map/loader'
 import { loadDbWithCache } from '@/plugins/sqlite-map/helpers'
 
 const BASE_URL = import.meta.env.BASE_URL
@@ -245,10 +245,14 @@ export default defineComponent({
       titleColumn = 'metric',
       valueColumn = 'value'
     ) {
+      // Track whether initSpl() succeeded so we can always call releaseSpl()
+      // (ensures the shared SPL worker refcount is balanced on errors).
+      let hasSplRef = false
       try {
         const trimmedQuery = query.trim()
         // open a sqlite connection
         const spl = await initSpl()
+        hasSplRef = true
         // connect to database
         const db = await loadDbWithCache(spl, this.fileApi, openDb, database)
         // run query and return result
@@ -266,6 +270,10 @@ export default defineComponent({
       } catch (e) {
         console.error('' + e)
         this.$emit('error', 'Error querying database: ' + database)
+      } finally {
+        if (hasSplRef) {
+          releaseSpl()
+        }
       }
       return { data: [] }
     },

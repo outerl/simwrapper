@@ -5,6 +5,7 @@
 
 import SPL from 'spl.js'
 import type { SPL as SPLType } from './types'
+import { clearAllDbCaches } from './db'
 
 let loadingQueue: Promise<void> = Promise.resolve()
 
@@ -43,5 +44,24 @@ export async function initSpl(): Promise<SPLType> {
 }
 
 export function releaseSpl(): void {
-  splRefCount -= 1 // let GC clean up, restarting the SPL engine is slow
+  // decrement the refcount (never negative)
+  splRefCount = Math.max(0, splRefCount - 1)
+
+  // when the last user releases SPL, perform a full cleanup: clear DB/blob caches
+  // and terminate the underlying SPL/worker runtime if supported. This prevents
+  // stale WASM/Worker instances from accumulating across dashboard switches.
+  if (splRefCount === 0) {
+    clearAllDbCaches()
+
+    try {
+      if (sharedSpl && typeof (sharedSpl as any).terminate === 'function') {
+        ;(sharedSpl as any).terminate()
+      }
+    } catch (e) {
+      console.warn('Failed to terminate SPL worker:', e)
+    }
+
+    sharedSpl = null
+    splInitPromise = null
+  }
 }
