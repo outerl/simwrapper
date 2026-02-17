@@ -143,6 +143,11 @@ const plugins = [
     ],
     component: defineAsyncComponent(() => import('./logistics/LogisticsViewer.vue')),
   },
+  {
+    kebabName: 'imoger',
+    filePatterns: ['**/viz-imoger*.y?(a)ml'],
+    component: defineAsyncComponent(() => import('./imoger/VehicleAnimation.vue')),
+  },
 ]
 
 export const pluginComponents: { [key: string]: AsyncComponent } = {}
