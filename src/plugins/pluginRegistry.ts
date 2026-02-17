@@ -50,8 +50,7 @@ const plugins = [
   {
     kebabName: 'vehicles',
     filePatterns: ['**/viz-vehicles*.y?(a)ml'],
-    component: defineAsyncComponent(() => import('./imoger/VehicleAnimation.vue')),
-    // component: defineAsyncComponent(() => import('./vehicle-animation/VehicleAnimation.vue')),
+    component: defineAsyncComponent(() => import('./vehicle-animation/VehicleAnimation.vue')),
   },
   {
     kebabName: 'summary-table',
@@ -144,11 +143,11 @@ const plugins = [
     ],
     component: defineAsyncComponent(() => import('./logistics/LogisticsViewer.vue')),
   },
-  // {
-  //   kebabName: 'imoger',
-  //   filePatterns: ['**/viz-imoger*.y?(a)ml'],
-  //   component: defineAsyncComponent(() => import('./imoger/VehicleAnimation.vue')),
-  // },
+  {
+    kebabName: 'imoger',
+    filePatterns: ['**/viz-imoger*.y?(a)ml'],
+    component: defineAsyncComponent(() => import('./imoger/VehicleAnimation.vue')),
+  },
 ]
 
 export const pluginComponents: { [key: string]: AsyncComponent } = {}
