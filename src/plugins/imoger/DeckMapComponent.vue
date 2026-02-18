@@ -133,7 +133,7 @@ export default defineComponent({
             getTargetPosition: (d: any) => d.p1,
             getTimeStart: (d: any) => d.t0,
             getTimeEnd: (d: any) => d.t1,
-            getColor: (d: any) => this.colors[d.occ],
+            getColor: (d: any) => this.colors[d.capKep],
             getWidth: 1, // (d: any) => 3.0 * (d.occ + 1) - 1,
             opacity: 0.7,
             widthMinPixels: 1,
@@ -256,10 +256,14 @@ export default defineComponent({
   },
 
   mounted() {
-    const style = `${BASE_URL}map-styles/${this.globalState.isDarkMode ? 'dark' : 'positron'}.json`
+    let style: any = `${BASE_URL}map-styles/${
+      this.globalState.isDarkMode ? 'dark' : 'positron'
+    }.json`
     const container = `map-${this.viewId}`
     const center = this.globalState.viewState.center as [number, number]
     const zoom = (this.globalState.viewState.zoom || 8) as number
+
+    // style = { version: 8, sources: {}, layers: [] }
 
     //@ts-ignore
     this.mymap = new maplibregl.Map({

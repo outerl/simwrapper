@@ -148,6 +148,11 @@ const plugins = [
     filePatterns: ['**/aeqviz-*.y?(a)ml'],
     component: defineAsyncComponent(() => import('./aequilibrae-map/AequilibraEMapComponent.vue')),
   },
+  {
+    kebabName: 'imoger',
+    filePatterns: ['**/viz-imoger*.y?(a)ml'],
+    component: defineAsyncComponent(() => import('./imoger/VehicleAnimation.vue')),
+  },
 ]
 
 export const pluginComponents: { [key: string]: AsyncComponent } = {}
